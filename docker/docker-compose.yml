@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg14
+    environment:
+      POSTGRES_USER: scout
+      POSTGRES_PASSWORD: secure_password
+      POSTGRES_DB: scout_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - scout_data:/var/lib/postgresql/data
+    networks:
+      - scout_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scout -d scout_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - scout_redis:/data
+    networks:
+      - scout_net
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    volumes:
+      - ../backend:/app
+    environment:
+      DATABASE_URL: postgresql://scout:secure_password@db:5432/scout_db
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - scout_net
+    command: uvicorn src.scout.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.frontend
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - scout_net
+
+volumes:
+  scout_data:
+  scout_redis:
+
+networks:
+  scout_net:
+    driver: bridge

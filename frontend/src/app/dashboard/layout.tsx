@@ -1,0 +1,23 @@
+import { Sidebar } from "@/components/layout/Sidebar"
+import ProtectedRoute from "@/components/auth/ProtectedRoute"
+
+export default function DashboardLayout({
+    children,
+}: {
+    children: React.ReactNode
+}) {
+    return (
+        <ProtectedRoute>
+            <div className="flex h-screen bg-black overflow-hidden">
+                <Sidebar />
+                <main className="flex-1 overflow-y-auto relative">
+                    {/* Background Grid */}
+                    <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center opacity-20 pointer-events-none" />
+                    <div className="relative z-10 p-6 md:p-8">
+                        {children}
+                    </div>
+                </main>
+            </div>
+        </ProtectedRoute>
+    )
+}

@@ -1,0 +1,49 @@
+# Multi-stage build for smaller image size
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Install system dependencies (needed for some python packages like psycopg2)
+# libpcap-dev is CRITICAL for Scapy/Network sniffing
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpcap-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install poetry
+RUN pip install poetry
+
+# Copy dependency definition
+COPY pyproject.toml poetry.lock* ./
+
+# Export requirements.txt (standard way to install in docker without poetry env issues)
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
+
+# --- Final Stage ---
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+# libpcap0.8 is needed for running Scapy
+RUN apt-get update && apt-get install -y \
+    libpcap0.8 \
+    libpq5 \
+    net-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements from builder
+COPY --from=builder /app/requirements.txt .
+
+# Install python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Environment setup
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+
+CMD ["uvicorn", "src.scout.main:app", "--host", "0.0.0.0", "--port", "8000"]
