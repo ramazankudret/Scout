@@ -1,7 +1,7 @@
 """
 Specialized Repositories for Scout entities
 """
-from typing import Optional, List
+from typing import Any, Optional, List
 from uuid import UUID
 from datetime import datetime
 
@@ -143,6 +143,95 @@ class AssetRepository(BaseRepository[Asset]):
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+
+class ScanResultRepository(BaseRepository[ScanResult]):
+    """Repository for ScanResult (nmap, masscan, etc.)."""
+
+    def __init__(self, session: AsyncSession):
+        super().__init__(ScanResult, session)
+
+    async def create(
+        self,
+        user_id: UUID,
+        scan_type: str,
+        scanner_used: str,
+        target: str,
+        status: str = "completed",
+        open_ports: Optional[List[int]] = None,
+        services_found: Optional[list] = None,
+        parsed_results: Optional[dict] = None,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        duration_seconds: Optional[int] = None,
+        asset_id: Optional[UUID] = None,
+        error_message: Optional[str] = None,
+        **kwargs: Any,
+    ) -> ScanResult:
+        """Create a scan result record."""
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        started_at = started_at or now
+        completed_at = completed_at or now
+        if services_found is None:
+            services_found = []
+        if parsed_results is None:
+            parsed_results = {}
+        return await super().create(
+            user_id=user_id,
+            scan_type=scan_type,
+            scanner_used=scanner_used,
+            target=target,
+            status=status,
+            open_ports=open_ports or [],
+            services_found=services_found,
+            parsed_results=parsed_results,
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_seconds=duration_seconds,
+            asset_id=asset_id,
+            error_message=error_message,
+            **kwargs,
+        )
+
+    async def list_by_user(
+        self,
+        user_id: UUID,
+        scan_type: Optional[str] = None,
+        scanner_used: Optional[str] = None,
+        target: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[ScanResult]:
+        """List scan results for a user with optional filters."""
+        query = select(ScanResult).where(ScanResult.user_id == user_id)
+        if scan_type:
+            query = query.where(ScanResult.scan_type == scan_type)
+        if scanner_used:
+            query = query.where(ScanResult.scanner_used == scanner_used)
+        if target:
+            query = query.where(ScanResult.target.ilike(f"%{target}%"))
+        query = query.order_by(desc(ScanResult.created_at)).offset(offset).limit(limit)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def count_by_user(
+        self,
+        user_id: UUID,
+        scan_type: Optional[str] = None,
+        scanner_used: Optional[str] = None,
+        target: Optional[str] = None,
+    ) -> int:
+        """Count scan results for a user with optional filters."""
+        query = select(func.count()).select_from(ScanResult).where(ScanResult.user_id == user_id)
+        if scan_type:
+            query = query.where(ScanResult.scan_type == scan_type)
+        if scanner_used:
+            query = query.where(ScanResult.scanner_used == scanner_used)
+        if target:
+            query = query.where(ScanResult.target.ilike(f"%{target}%"))
+        result = await self.session.execute(query)
+        return result.scalar() or 0
 
 
 class IncidentRepository(BaseRepository[Incident]):

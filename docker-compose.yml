@@ -48,7 +48,8 @@ services:
       - POSTGRES_DB=scout_db
       - POSTGRES_USER=${POSTGRES_USER:-scout}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-scout_secure_2024}
-      - CORS_ORIGINS=["http://localhost:3000"]
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://192.168.1.11:3000"]
+      - DATABASE_URL=postgresql+asyncpg://scout:${POSTGRES_PASSWORD:-scout_secure_2024}@db:5432/scout_db
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -67,6 +68,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Tarayıcı backend'e nereden istek atacak (aynı makinede localhost, ağdan erişimde host IP kullan)
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
     depends_on:
       - backend

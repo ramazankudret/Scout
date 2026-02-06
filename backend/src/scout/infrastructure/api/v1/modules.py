@@ -15,6 +15,12 @@ from scout.modules import (
     ModuleResult,
     module_registry,
 )
+from scout.infrastructure.database import get_db
+from scout.infrastructure.api.v1.auth import get_current_user_optional
+from scout.infrastructure.database import User
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
 
 router = APIRouter()
 
@@ -63,6 +69,8 @@ async def get_module(module_name: str) -> dict[str, Any]:
 async def execute_module(
     module_name: str,
     request: ExecuteModuleRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Annotated[User | None, Depends(get_current_user_optional)] = None,
 ) -> ExecuteModuleResponse:
     """
     Execute a specific module.
@@ -70,9 +78,18 @@ async def execute_module(
     The module will run with the specified mode and configuration.
     """
     try:
+        from uuid import UUID
+        from scout.infrastructure.repositories import AssetRepository, ScanResultRepository, TrafficRepository
+
+        DEMO_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+        user_id = current_user.id if current_user else DEMO_USER_ID
         context = ExecutionContext(
             mode=request.mode,
             config=request.config,
+            asset_repo=AssetRepository(db),
+            traffic_repo=TrafficRepository(db),
+            scan_result_repo=ScanResultRepository(db),
+            user_id=user_id,
         )
         result = await module_registry.execute(module_name, context)
 
@@ -82,6 +99,16 @@ async def execute_module(
         )
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Module '{module_name}' not found")
+    except Exception as e:
+        return ExecuteModuleResponse(
+            module_name=module_name,
+            result=ModuleResult(
+                success=False,
+                message="Module execution failed",
+                data={"error": str(e)},
+                errors=[str(e)],
+            ),
+        )
 
 
 @router.post("/execute-all")

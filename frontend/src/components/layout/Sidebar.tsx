@@ -69,6 +69,8 @@ const navGroups: NavGroup[] = [
     items: [
       { title: "Assets", href: "/dashboard/assets", icon: Server, color: "text-scout-warning" },
       { title: "Incidents", href: "/dashboard/incidents", icon: Shield, color: "text-scout-danger" },
+      { title: "Tarama Geçmişi", href: "/dashboard/scans", icon: Crosshair, color: "text-scout-danger" },
+      { title: "Trafik", href: "/dashboard/traffic", icon: Ghost, color: "text-purple-500" },
       { title: "Threats", href: "/dashboard/incidents", icon: AlertTriangle, color: "text-amber-500" },
     ],
   },

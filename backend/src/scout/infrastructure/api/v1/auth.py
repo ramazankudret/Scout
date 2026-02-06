@@ -1,18 +1,21 @@
 """
 Authentication API Endpoints
 """
+import asyncio
+import json
 from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from scout.core.config import settings
 from scout.core.security import create_access_token, get_password_hash, verify_password, ALGORITHM
-from scout.infrastructure.database import get_db, User
+from scout.infrastructure.database import get_db, get_db_context, User
 from scout.infrastructure.repositories import UserRepository
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -72,6 +75,26 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: An
     return user
 
 
+async def get_current_user_optional(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """Return current user if Authorization Bearer token is valid; otherwise None."""
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        return None
+    token = auth.split(" ", 1)[1]
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+    repo = UserRepository(db)
+    return await repo.get(user_id)
+
+
 async def require_superuser(current_user: Annotated[User, Depends(get_current_user)]):
     """Require current user to be superuser. Raise 403 otherwise."""
     if not getattr(current_user, "is_superuser", False):
@@ -84,6 +107,21 @@ async def require_superuser(current_user: Annotated[User, Depends(get_current_us
 
 def _is_db_connection_error(exc: BaseException) -> bool:
     """True if the exception is due to DB being unreachable (e.g. PostgreSQL not running)."""
+    # #region agent log
+    _log_path = r"c:\Users\erama\OneDrive\Desktop\Scout\.cursor\debug.log"
+    try:
+        _err = str(exc).lower()
+        _res = (
+            isinstance(exc, ConnectionRefusedError)
+            or (isinstance(exc, OSError) and getattr(exc, "winerror", None) == 1225)
+            or "1225" in _err or "connection refused" in _err or "could not connect" in _err
+        )
+        open(_log_path, "a", encoding="utf-8").write(
+            json.dumps({"location": "auth.py:_is_db_connection_error", "message": "check", "data": {"exc_type": type(exc).__name__, "exc_msg": str(exc)[:500], "result": _res, "hypothesisId": "H2"}}) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
     if isinstance(exc, ConnectionRefusedError):
         return True
     if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 1225:
@@ -128,16 +166,51 @@ async def login_for_access_token(
     db: AsyncSession = Depends(get_db)
 ):
     """Get access token (Login)"""
+    # #region agent log
+    _log_path = r"c:\Users\erama\OneDrive\Desktop\Scout\.cursor\debug.log"
+    try:
+        open(_log_path, "a", encoding="utf-8").write(
+            json.dumps({"location": "auth.py:login_for_access_token", "message": "entry", "data": {"username": getattr(form_data, "username", None), "hypothesisId": "H1,H3,H4,H5"}}) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
     try:
         repo = UserRepository(db)
         user = await repo.get_by_username(form_data.username)
     except Exception as e:
+        # #region agent log
+        try:
+            open(_log_path, "a", encoding="utf-8").write(
+                json.dumps({"location": "auth.py:login_for_access_token", "message": "exception_caught", "data": {"exc_type": type(e).__name__, "exc_msg": str(e)[:500], "is_conn_err": _is_db_connection_error(e), "hypothesisId": "H1,H2,H4"}}) + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
         if _is_db_connection_error(e):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="database_unavailable",
-            ) from e
-        raise
+            last_err = e
+            for attempt in range(2):
+                await asyncio.sleep(0.5)
+                try:
+                    async with get_db_context() as retry_session:
+                        retry_repo = UserRepository(retry_session)
+                        user = await retry_repo.get_by_username(form_data.username)
+                    try:
+                        open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "auth.py:login_for_access_token", "message": "retry_succeeded", "data": {"attempt": attempt + 1, "runId": "post-fix"}}) + "\n")
+                    except Exception:
+                        pass
+                    break
+                except Exception as retry_e:
+                    last_err = retry_e
+                    if not _is_db_connection_error(retry_e):
+                        raise
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="database_unavailable",
+                ) from last_err
+        else:
+            raise
 
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(

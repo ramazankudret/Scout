@@ -31,6 +31,10 @@ RUN apt-get update && apt-get install -y \
     libpcap0.8 \
     libpq5 \
     net-tools \
+    nmap \
+    tshark \
+    masscan \
+    netdiscover \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements from builder

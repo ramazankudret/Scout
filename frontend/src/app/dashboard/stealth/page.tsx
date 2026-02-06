@@ -1,10 +1,32 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Eye, Activity, Database, Download } from "lucide-react"
+import { Eye, Activity, Database, Download, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { modulesApi } from "@/services/modules"
 
 export default function StealthPage() {
+    const [capturing, setCapturing] = useState(false)
+    const [results, setResults] = useState<any>(null)
+
+    const handleCapture = async () => {
+        try {
+            setCapturing(true)
+            // passive mode, 5 seconds capture, 50 packets
+            const result = await modulesApi.execute("stealth", "passive", {
+                interface: "eth0",
+                duration: 5,
+                packet_count: 50
+            })
+            setResults(result.data)
+        } catch (error) {
+            console.error("Capture failed:", error)
+        } finally {
+            setCapturing(false)
+        }
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -20,9 +42,13 @@ export default function StealthPage() {
                         <Download className="w-4 h-4" />
                         Export PCAP
                     </Button>
-                    <Button className="bg-purple-600 hover:bg-purple-700 text-white gap-2">
-                        <Activity className="w-4 h-4" />
-                        Start Capture
+                    <Button
+                        onClick={handleCapture}
+                        disabled={capturing}
+                        className="bg-purple-600 hover:bg-purple-700 text-white gap-2 min-w-[140px]"
+                    >
+                        {capturing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Activity className="w-4 h-4" />}
+                        {capturing ? "Listening..." : "Start Capture"}
                     </Button>
                 </div>
             </div>
@@ -45,15 +71,26 @@ export default function StealthPage() {
                     </CardHeader>
                     <CardContent className="h-[300px] flex items-center justify-center border-t border-white/5">
                         <div className="space-y-4 w-full">
-                            {['HTTP', 'HTTPS', 'DNS', 'SSH', 'FTP'].map((p, i) => (
-                                <div key={p} className="flex items-center justify-between text-sm">
-                                    <span className="text-white">{p}</span>
-                                    <div className="w-2/3 h-2 bg-white/10 rounded-full overflow-hidden">
-                                        <div className="h-full bg-purple-500" style={{ width: `${80 - (i * 15)}%` }} />
+                            {results?.protocols ? (
+                                results.protocols.slice(0, 5).map((p: string, i: number) => (
+                                    <div key={p} className="flex items-center justify-between text-sm">
+                                        <span className="text-white">{p}</span>
+                                        <div className="w-2/3 h-2 bg-white/10 rounded-full overflow-hidden">
+                                            <div className="h-full bg-purple-500" style={{ width: '80%' }} />
+                                        </div>
                                     </div>
-                                    <span className="text-muted-foreground">{80 - (i * 15)}%</span>
-                                </div>
-                            ))}
+                                ))
+                            ) : (
+                                ['HTTP', 'HTTPS', 'DNS', 'SSH', 'FTP'].map((p, i) => (
+                                    <div key={p} className="flex items-center justify-between text-sm">
+                                        <span className="text-white">{p}</span>
+                                        <div className="w-2/3 h-2 bg-white/10 rounded-full overflow-hidden">
+                                            <div className="h-full bg-purple-500" style={{ width: `${80 - (i * 15)}%` }} />
+                                        </div>
+                                        <span className="text-muted-foreground">{80 - (i * 15)}%</span>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -76,19 +113,27 @@ export default function StealthPage() {
                                     <th className="px-4 py-3">Source IP</th>
                                     <th className="px-4 py-3">Dest IP</th>
                                     <th className="px-4 py-3">Protocol</th>
-                                    <th className="px-4 py-3">Size</th>
+                                    <th className="px-4 py-3">Length</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {[1, 2, 3, 4, 5].map((i) => (
-                                    <tr key={i} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-4 py-3 text-white/60">14:2{i}:05</td>
-                                        <td className="px-4 py-3 text-purple-400">192.168.1.105</td>
-                                        <td className="px-4 py-3 text-white">10.0.0.5</td>
-                                        <td className="px-4 py-3"><span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-xs">TCP</span></td>
-                                        <td className="px-4 py-3 text-muted-foreground">64 B</td>
+                                {results?.recent_packets && results.recent_packets.length > 0 ? (
+                                    results.recent_packets.map((pkt: any, i: number) => (
+                                        <tr key={i} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-4 py-3 text-white/60">{pkt.time.split('T')[1].split('.')[0]}</td>
+                                            <td className="px-4 py-3 text-purple-400">{pkt.source}</td>
+                                            <td className="px-4 py-3 text-white">{pkt.destination}</td>
+                                            <td className="px-4 py-3"><span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-xs">{pkt.protocol}</span></td>
+                                            <td className="px-4 py-3 text-muted-foreground">{pkt.length}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                                            Click "Start Capture" to listen for packets...
+                                        </td>
                                     </tr>
-                                ))}
+                                )}
                             </tbody>
                         </table>
                     </div>

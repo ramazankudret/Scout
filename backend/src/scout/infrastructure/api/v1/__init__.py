@@ -22,6 +22,8 @@ from scout.infrastructure.api.v1.admin import router as admin_router
 from scout.infrastructure.api.v1.analytics import router as analytics_router
 from scout.infrastructure.api.v1.notifications import router as notifications_router
 from scout.infrastructure.api.v1.api_keys import router as api_keys_router
+from scout.infrastructure.api.v1.scans import router as scans_router
+from scout.infrastructure.api.v1.traffic import router as traffic_router
 
 router = APIRouter()
 
@@ -42,3 +44,5 @@ router.include_router(admin_router)
 router.include_router(analytics_router)
 router.include_router(notifications_router)
 router.include_router(api_keys_router)
+router.include_router(scans_router)
+router.include_router(traffic_router)

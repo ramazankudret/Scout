@@ -1,10 +1,54 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Target, Search, AlertCircle, CheckCircle } from "lucide-react"
+import { Target, Search, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { modulesApi } from "@/services/modules"
+import { getBaseUrl } from "@/services/api"
 
 export default function HunterPage() {
+    const [target, setTarget] = useState("127.0.0.1")
+    const [scanning, setScanning] = useState(false)
+    const [results, setResults] = useState<any>(null)
+    const [error, setError] = useState<string | null>(null)
+    const [backendOk, setBackendOk] = useState<boolean | null>(null)
+
+    useEffect(() => {
+        const check = async () => {
+            try {
+                const res = await fetch(`${getBaseUrl()}/health`, { method: "GET" })
+                setBackendOk(res.ok)
+            } catch {
+                setBackendOk(false)
+            }
+        }
+        check()
+    }, [])
+
+    const handleScan = async () => {
+        try {
+            setScanning(true)
+            setResults(null)
+            setError(null)
+            const result = await modulesApi.execute("hunter", "active", { target })
+            if (result?.data?.error) {
+                setError(result.data.error)
+                setResults(null)
+            } else {
+                setResults(result?.data ?? null)
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Scan failed"
+            setError(msg)
+            setResults(null)
+            console.error("Scan failed:", err)
+        } finally {
+            setScanning(false)
+        }
+    }
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -14,14 +58,71 @@ export default function HunterPage() {
                         Hunter Mode
                     </h1>
                     <p className="text-muted-foreground">Proactive Vulnerability Scanning & Pentesting</p>
+                    {backendOk === false && (
+                        <p className="text-amber-500 text-sm mt-1">Backend bağlı değil. Backend&apos;i başlatın (port 8000).</p>
+                    )}
+                    {backendOk === true && (
+                        <p className="text-green-600 text-sm mt-1">Backend bağlı</p>
+                    )}
                 </div>
-                <div className="flex gap-2">
-                    <Button className="bg-red-600 hover:bg-red-700 text-white gap-2">
-                        <Search className="w-4 h-4" />
-                        New Scan
+                <div className="flex gap-2 items-center">
+                    <Input
+                        value={target}
+                        onChange={(e: any) => setTarget(e.target.value)}
+                        placeholder="Target IP (e.g., 192.168.1.5)"
+                        className="bg-black/50 border-white/10 w-64"
+                    />
+                    <Button
+                        onClick={handleScan}
+                        disabled={scanning}
+                        className="bg-red-600 hover:bg-red-700 text-white gap-2 min-w-[120px]"
+                    >
+                        {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                        {scanning ? "Scanning..." : "Start Scan"}
                     </Button>
                 </div>
             </div>
+
+            {/* Error */}
+            {error && (
+                <Card className="border-destructive/50 bg-destructive/10">
+                    <CardContent className="pt-6">
+                        <p className="text-destructive">{error}</p>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* Results Section */}
+            {results && !results.error && (
+                <Card className="border-red-500/20 bg-black/40">
+                    <CardHeader>
+                        <CardTitle>Scan Results: {results.target ?? target}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                                <h3 className="font-bold mb-2">Open Ports</h3>
+                                <ul className="space-y-1">
+                                    {results.open_ports?.map((port: any) => (
+                                        <li key={port} className="text-sm bg-red-500/10 text-red-400 px-2 py-1 rounded inline-block mr-2">
+                                            Port {port}
+                                        </li>
+                                    ))}
+                                    {(!results.open_ports || results.open_ports.length === 0) && <li className="text-muted-foreground">No open ports found</li>}
+                                </ul>
+                            </div>
+                            <div>
+                                <h3 className="font-bold mb-2">Services</h3>
+                                <ul className="space-y-1">
+                                    {results.services?.map((svc: string, i: number) => (
+                                        <li key={i} className="text-sm text-gray-300">• {svc}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <div className="grid gap-6 md:grid-cols-3">
                 {/* Action Cards */}
@@ -55,33 +156,6 @@ export default function HunterPage() {
                     </CardContent>
                 </Card>
             </div>
-
-            {/* Recent Findings */}
-            <Card className="border-red-500/20">
-                <CardHeader>
-                    <CardTitle>Recent Findings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="space-y-2">
-                        {[
-                            { severity: "CRITICAL", title: "Open SMB Port (445)", host: "192.168.1.50" },
-                            { severity: "HIGH", title: "Outdated SSH Version", host: "192.168.1.12" },
-                            { severity: "MEDIUM", title: "Default Admin Password", host: "192.168.1.200" },
-                        ].map((find, i) => (
-                            <div key={i} className="flex items-center gap-4 p-4 rounded bg-white/5 border border-white/5 cursor-pointer hover:bg-white/10">
-                                <div className={`px-2 py-1 text-xs font-bold rounded ${find.severity === 'CRITICAL' ? 'bg-red-500 text-black' : find.severity === 'HIGH' ? 'bg-orange-500 text-black' : 'bg-yellow-500 text-black'}`}>
-                                    {find.severity}
-                                </div>
-                                <div className="flex-1">
-                                    <h4 className="text-white font-medium">{find.title}</h4>
-                                    <p className="text-xs text-muted-foreground">Host: {find.host}</p>
-                                </div>
-                                <Button variant="ghost" size="sm">Fix This</Button>
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
         </div>
     )
 }

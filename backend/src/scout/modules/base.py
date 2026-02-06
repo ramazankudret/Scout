@@ -52,6 +52,8 @@ class ExecutionContext(BaseModel):
     # These are Any to avoid circular imports, but will be typed interfaces
     threat_repo: Any = None
     asset_repo: Any = None
+    traffic_repo: Any = None  # Added for Stealth module
+    scan_result_repo: Any = None  # For persisting scan results (Hunter, etc.)
     llm_service: Any = None
     event_publisher: Any = None
 

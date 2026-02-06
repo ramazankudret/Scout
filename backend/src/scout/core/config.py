@@ -37,8 +37,8 @@ class Settings(BaseSettings):
         "http://192.168.1.11:3000",  # Next.js Network URL - aynı ağdan erişim için
     ]
 
-    # Database
-    database_url: str = "postgresql+asyncpg://scout:scout_secure_2024@localhost/scout_db"
+    # Database (override with DATABASE_URL in .env; default assumes PostgreSQL on localhost:5432)
+    database_url: str = "postgresql+asyncpg://scout:scout_secure_2024@localhost:5432/scout_db"
     
     # Security
     secret_key: str = "CHANGE_THIS_IN_PRODUCTION_SECRET_KEY_12345"

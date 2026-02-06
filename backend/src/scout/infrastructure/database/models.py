@@ -789,3 +789,29 @@ class AgentMetric(Base):
 
 
 
+
+# ============================================
+# 20. PACKET_LOG MODEL
+# ============================================
+class PacketLog(Base):
+    __tablename__ = "packet_logs"
+    
+    # TimescaleDB hypertable candidate
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True, server_default=func.now())
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), default=uuid4) # Secondary ID, timescaledb uses timestamp as primary dimension
+    
+    source_ip: Mapped[str] = mapped_column(INET, nullable=False)
+    destination_ip: Mapped[str] = mapped_column(INET, nullable=False)
+    protocol: Mapped[str] = mapped_column(String(20), nullable=False)
+    length: Mapped[int] = mapped_column(Integer, nullable=False)
+    info: Mapped[Optional[str]] = mapped_column(Text)
+    
+    interface: Mapped[str] = mapped_column(String(50))
+    direction: Mapped[str] = mapped_column(String(20), default="unknown")
+    
+    # Indexes for faster component searching
+    __table_args__ = (
+        Index("idx_packet_logs_src", "source_ip"),
+        Index("idx_packet_logs_dst", "destination_ip"),
+        Index("idx_packet_logs_proto", "protocol"),
+    )

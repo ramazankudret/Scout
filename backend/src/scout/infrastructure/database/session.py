@@ -30,7 +30,13 @@ else:
     _engine_kw["max_overflow"] = 20
     _engine_kw["pool_recycle"] = 3600
 
-engine = create_async_engine(settings.database_url, **_engine_kw)
+# Windows: localhost can resolve to IPv6 (::1); PostgreSQL often listens only on 127.0.0.1.
+# Force IPv4 so startup and request paths use the same address and avoid ConnectionRefusedError.
+_database_url = settings.database_url
+if "@localhost" in _database_url:
+    _database_url = _database_url.replace("@localhost", "@127.0.0.1", 1)
+
+engine = create_async_engine(_database_url, **_engine_kw)
 
 # Session factory
 async_session_factory = async_sessionmaker(
@@ -117,10 +123,18 @@ async def init_db() -> None:
                 )
                 await asyncio.sleep(delay_seconds)
                 continue
-            logger.error("database_connection_failed", error=str(e))
+            logger.error(
+                "database_connection_failed",
+                error=str(e),
+                hint="PostgreSQL calisiyor mu? (servis/port 5432) .env veya DATABASE_URL dogru mu? Kullanici ve veritabani olusturuldu mu? (ornek: create user scout; create database scout_db;)",
+            )
             raise
     if last_error is not None:
-        logger.error("database_connection_failed", error=str(last_error))
+        logger.error(
+            "database_connection_failed",
+            error=str(last_error),
+            hint="PostgreSQL calisiyor mu? .env icinde DATABASE_URL kontrol et (backend/.env).",
+        )
         raise last_error
 
 

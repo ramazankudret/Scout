@@ -7,7 +7,13 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
     curl \
+    nmap \
+    tshark \
+    masscan \
+    netdiscover \
+    libpcap-dev \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Install Poetry
 RUN pip install poetry
