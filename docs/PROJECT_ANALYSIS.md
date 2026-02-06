@@ -200,7 +200,7 @@ Açık kaynak araçlar için wrapper'lar (`backend/src/scout/tools/`):
 | # | Bulgu | Konum | Önem |
 |---|-------|-------|------|
 | 1 | **Hardcoded DB şifresi** (default) | `config.py:41` — `scout_secure_2024` | Orta |
-| 2 | **Çift `secret_key` tanımı** — İkincisi (satır 75) birincisini (satır 44) eziyoer; son değer `dev-secret-key-change-in-production` | `config.py:44,75` | Yüksek |
+| 2 | **Çift `secret_key` tanımı** — İkincisi (satır 75) birincisini (satır 44) eziyor; son değer `dev-secret-key-change-in-production` | `config.py:44,75` | Yüksek |
 | 3 | **Windows debug log yolu** üretim kodunda — `c:\Users\erama\OneDrive\Desktop\Scout\.cursor\debug.log` dosyasına yazma denemeleri | `auth.py:111-124, 170+` | Yüksek |
 | 4 | **`except Exception: pass`** — Sessiz hata yutma (debug log yazma bloklarında) | `auth.py:122,175,187,200` | Orta |
 | 5 | **Bare `except:`** ifadesi | `endpoint_security/scanner.py:163` | Orta |
