@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Space_Grotesk, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { cn } from '@/lib/utils'
 
-const inter = Inter({ subsets: ['latin'] })
+const geometric = Space_Grotesk({ subsets: ['latin'], variable: '--font-geometric' })
+const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' })
 
 export const metadata: Metadata = {
   title: 'Scout | AI Cyber Security Agent',
@@ -16,8 +17,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={cn(inter.className, "antialiased min-h-screen bg-black text-white")}>
+    <html lang="en" className={cn("dark", geometric.variable, mono.variable)}>
+      <body className="font-sans antialiased min-h-screen bg-background text-foreground">
         {children}
       </body>
     </html>

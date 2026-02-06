@@ -187,7 +187,22 @@ class SupervisorAgent:
         # Persist state and history
         await self._persist_state(agent_name, record)
         await self._log_execution_history(agent_name, success, error)
-    
+
+        # On failure, trigger Learning Engine to analyze and store a lesson (lazy import to avoid circular deps)
+        if not success and error:
+            try:
+                from scout.agents.learning_engine import learning_engine
+                await learning_engine.analyze_failure(
+                    agent_name=agent_name,
+                    action_type="run",
+                    target="",
+                    error_message=error,
+                    error_type="",
+                    context={"consecutive_failures": record.consecutive_failures},
+                )
+            except Exception as e:
+                logger.warning("learning_engine_analyze_failure_skipped", agent_name=agent_name, error=str(e))
+
     def get_agent_status(self, agent_name: str) -> Optional[AgentHealthRecord]:
         """Get the health record for an agent (From Cache)."""
         return self._agents.get(agent_name)
@@ -264,7 +279,8 @@ class SupervisorAgent:
         
         # Analyze failure with LLM
         analysis = await self._analyze_failure(agent_name, record)
-        
+        reason = f"Agent {agent_name} failed after {record.restart_count} restart(s). {record.last_error or 'Unknown'}. Analysis: {(analysis[:500] + '...') if analysis and len(analysis) > 500 else (analysis or '')}"
+
         async with get_db_context() as session:
             repo = SupervisorRepository(session)
             await repo.log_event({
@@ -275,7 +291,44 @@ class SupervisorAgent:
                 "outcome": "PENDING",
                 "is_automated": True
             })
-        
+
+            # Create HITL pending action so it appears in Approvals UI
+            try:
+                from sqlalchemy import select
+                from scout.infrastructure.database.models import User
+                from scout.infrastructure.repositories.approval_repositories import (
+                    PendingActionRepository,
+                    ApprovalPolicyRepository,
+                )
+                from scout.application.services.approval_service import ActionApprovalService
+                from scout.domain.entities.pending_action import ActionSeverity
+                from scout.infrastructure.websocket import websocket_manager
+
+                superuser_result = await session.execute(
+                    select(User).where(User.is_superuser == True).limit(1)
+                )
+                superuser = superuser_result.scalars().first()
+                if superuser:
+                    pending_repo = PendingActionRepository(session)
+                    policy_repo = ApprovalPolicyRepository(session)
+                    approval_service = ActionApprovalService(
+                        pending_action_repo=pending_repo,
+                        policy_repo=policy_repo,
+                        websocket_manager=websocket_manager,
+                    )
+                    await approval_service.request_approval(
+                        user_id=superuser.id,
+                        action_type="supervisor_escalation",
+                        module_name="supervisor",
+                        target=agent_name,
+                        target_type="agent",
+                        reason=reason,
+                        severity=ActionSeverity.CRITICAL,
+                        confidence_score=0.0,
+                    )
+            except Exception as e:
+                logger.warning("hitl_escalation_create_failed", agent_name=agent_name, error=str(e))
+
         logger.info(
             "failure_analysis_complete",
             agent_name=agent_name,

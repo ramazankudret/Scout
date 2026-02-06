@@ -35,12 +35,20 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: UUID
     email: str
-    username: str
+    username: str | None = None
     full_name: str | None = None
     is_active: bool
+    timezone: str | None = None
+    locale: str | None = None
     
     class Config:
         from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    full_name: str | None = None
+    timezone: str | None = None
+    locale: str | None = None
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: Annotated[AsyncSession, Depends(get_db)]):
@@ -64,29 +72,54 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], db: An
     return user
 
 
+async def require_superuser(current_user: Annotated[User, Depends(get_current_user)]):
+    """Require current user to be superuser. Raise 403 otherwise."""
+    if not getattr(current_user, "is_superuser", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser required",
+        )
+    return current_user
+
+
+def _is_db_connection_error(exc: BaseException) -> bool:
+    """True if the exception is due to DB being unreachable (e.g. PostgreSQL not running)."""
+    if isinstance(exc, ConnectionRefusedError):
+        return True
+    if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 1225:
+        return True
+    err_msg = str(exc).lower()
+    return "1225" in err_msg or "connection refused" in err_msg or "could not connect" in err_msg
+
+
 @router.post("/register", response_model=UserResponse)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
     """Register a new user"""
-    repo = UserRepository(db)
-    
-    # Check if user exists
-    if await repo.get_by_email(user_in.email):
-        raise HTTPException(status_code=400, detail="Email already registered")
-        
-    if await repo.get_by_username(user_in.username):
-        raise HTTPException(status_code=400, detail="Username already taken")
-    
-    # Create user
-    hashed_password = get_password_hash(user_in.password)
-    user = await repo.create(
-        email=user_in.email,
-        username=user_in.username,
-        hashed_password=hashed_password,
-        full_name=user_in.full_name,
-        is_active=True,
-        is_verified=False
-    )
-    return user
+    try:
+        repo = UserRepository(db)
+        if await repo.get_by_email(user_in.email):
+            raise HTTPException(status_code=400, detail="Email already registered")
+        if await repo.get_by_username(user_in.username):
+            raise HTTPException(status_code=400, detail="Username already taken")
+        hashed_password = get_password_hash(user_in.password)
+        user = await repo.create(
+            email=user_in.email,
+            username=user_in.username,
+            hashed_password=hashed_password,
+            full_name=user_in.full_name,
+            is_active=True,
+            is_verified=False,
+        )
+        return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        if _is_db_connection_error(e):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="database_unavailable",
+            ) from e
+        raise
 
 
 @router.post("/token", response_model=Token)
@@ -95,16 +128,24 @@ async def login_for_access_token(
     db: AsyncSession = Depends(get_db)
 ):
     """Get access token (Login)"""
-    repo = UserRepository(db)
-    user = await repo.get_by_username(form_data.username)
-    
+    try:
+        repo = UserRepository(db)
+        user = await repo.get_by_username(form_data.username)
+    except Exception as e:
+        if _is_db_connection_error(e):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="database_unavailable",
+            ) from e
+        raise
+
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         subject=user.id, expires_delta=access_token_expires
@@ -115,4 +156,22 @@ async def login_for_access_token(
 @router.get("/me", response_model=UserResponse)
 async def read_users_me(current_user: Annotated[User, Depends(get_current_user)]):
     """Get current user profile"""
+    return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_users_me(
+    body: UserUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Update current user profile"""
+    if body.full_name is not None:
+        current_user.full_name = body.full_name
+    if body.timezone is not None:
+        current_user.timezone = body.timezone
+    if body.locale is not None:
+        current_user.locale = body.locale
+    await db.commit()
+    await db.refresh(current_user)
     return current_user

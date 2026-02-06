@@ -5,12 +5,13 @@ from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 
-from sqlalchemy import select, and_, or_, desc
+from sqlalchemy import select, and_, or_, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scout.infrastructure.database.models import (
-    User, Asset, Incident, Vulnerability, 
-    AgentRun, AgentMemory, ScanResult, Notification
+    User, Asset, Incident, Vulnerability,
+    AgentRun, AgentMemory, ScanResult, Notification,
+    ApiKey,
 )
 from scout.infrastructure.repositories.base import BaseRepository
 
@@ -43,6 +44,39 @@ class UserRepository(BaseRepository[User]):
         )
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    async def list_users(
+        self,
+        skip: int = 0,
+        limit: int = 50,
+        is_active: Optional[bool] = None,
+        q: Optional[str] = None,
+    ) -> List[User]:
+        """List users with optional filters (admin)."""
+        query = select(User).order_by(desc(User.created_at))
+        if is_active is not None:
+            query = query.where(User.is_active == is_active)
+        if q and q.strip():
+            term = f"%{q.strip()}%"
+            query = query.where(or_(User.email.ilike(term), User.username.ilike(term)))
+        query = query.offset(skip).limit(limit)
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def count_users(
+        self,
+        is_active: Optional[bool] = None,
+        q: Optional[str] = None,
+    ) -> int:
+        """Count users with same filters as list_users."""
+        query = select(func.count()).select_from(User)
+        if is_active is not None:
+            query = query.where(User.is_active == is_active)
+        if q and q.strip():
+            term = f"%{q.strip()}%"
+            query = query.where(or_(User.email.ilike(term), User.username.ilike(term)))
+        result = await self.session.execute(query)
+        return result.scalar() or 0
 
 
 class AssetRepository(BaseRepository[Asset]):
@@ -317,3 +351,14 @@ class NotificationRepository(BaseRepository[Notification]):
         )
         result = await self.session.execute(query)
         return result.rowcount
+
+
+class ApiKeyRepository(BaseRepository[ApiKey]):
+    """Repository for API key operations."""
+
+    def __init__(self, session: AsyncSession):
+        super().__init__(ApiKey, session)
+
+    async def list_by_user(self, user_id: UUID, skip: int = 0, limit: int = 50) -> List[ApiKey]:
+        """List API keys for a user."""
+        return await self.get_by_user(user_id, skip=skip, limit=limit)

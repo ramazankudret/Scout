@@ -7,7 +7,7 @@ Handles WebSocket connections for real-time notifications in the HITL system.
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, HTTPException
-import jwt
+from jose import JWTError, jwt
 
 from scout.core.config import settings
 from scout.core.logging import get_logger
@@ -41,10 +41,9 @@ async def authenticate_websocket(token: str) -> UUID:
         if not user_id:
             raise ValueError("No user ID in token")
         return UUID(user_id)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=4001, detail="Token expired")
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(status_code=4002, detail=f"Invalid token: {e}")
+    except JWTError as e:
+        detail = "Token expired" if "expired" in str(e).lower() else f"Invalid token: {e}"
+        raise HTTPException(status_code=4001, detail=detail)
     except Exception as e:
         raise HTTPException(status_code=4003, detail=f"Authentication failed: {e}")
 

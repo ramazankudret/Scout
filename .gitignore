@@ -63,5 +63,9 @@ logs/
 # Docker
 docker-compose.override.yml
 
+# Lesson model pipeline data
+data/lesson_export/
+data/lesson_model_output/
+
 # Python cache
 *.pyc

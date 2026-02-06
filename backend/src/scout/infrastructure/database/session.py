@@ -17,15 +17,20 @@ from scout.core.logger import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Create async engine
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,  # SQL logging in debug mode
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=3600,  # Recycle connections after 1 hour
-)
+# Development: NullPool = her istekte yeni bağlantı (Windows/Docker'da pool kopmasına karşı)
+# Production: connection pool kullan
+_engine_kw: dict = {
+    "echo": settings.debug,
+    "pool_pre_ping": True,
+}
+if settings.environment == "development":
+    _engine_kw["poolclass"] = NullPool
+else:
+    _engine_kw["pool_size"] = 10
+    _engine_kw["max_overflow"] = 20
+    _engine_kw["pool_recycle"] = 3600
+
+engine = create_async_engine(settings.database_url, **_engine_kw)
 
 # Session factory
 async_session_factory = async_sessionmaker(
@@ -76,20 +81,47 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
 
 
 from sqlalchemy import text
+import asyncio
+
+def _is_connection_refused(e: BaseException) -> bool:
+    """True if the error means DB is not yet accepting connections (e.g. Docker starting)."""
+    if isinstance(e, ConnectionRefusedError):
+        return True
+    if isinstance(e, OSError) and getattr(e, "winerror", None) == 1225:
+        return True
+    return "1225" in str(e) or "connection refused" in str(e).lower()
 
 async def init_db() -> None:
     """
     Initialize database connection and verify it works.
-    Called during app startup.
+    Called during app startup. Retries on connection refused (e.g. PostgreSQL/Docker still starting).
     """
-    try:
-        async with engine.begin() as conn:
-            # Test connection
-            await conn.execute(text("SELECT 1"))
-        logger.info("database_connected", url=settings.database_url[:50] + "...")
-    except Exception as e:
-        logger.error("database_connection_failed", error=str(e))
-        raise
+    last_error: BaseException | None = None
+    max_attempts = 5
+    delay_seconds = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("database_connected", url=settings.database_url[:50] + "...")
+            return
+        except Exception as e:
+            last_error = e
+            if attempt < max_attempts and _is_connection_refused(e):
+                logger.warning(
+                    "database_connection_retry",
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    delay_seconds=delay_seconds,
+                    error=str(e),
+                )
+                await asyncio.sleep(delay_seconds)
+                continue
+            logger.error("database_connection_failed", error=str(e))
+            raise
+    if last_error is not None:
+        logger.error("database_connection_failed", error=str(last_error))
+        raise last_error
 
 
 async def close_db() -> None:

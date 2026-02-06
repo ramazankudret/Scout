@@ -296,7 +296,7 @@ Your response MUST be valid JSON with:
         user_prompt = f"""Query: {query}
 
 Logs to analyze:
-{logs[:8000]}"""  # Limit log size for context window
+{logs}"""  # Caller sends preprocessed content (size already limited by log preprocessor)
 
         try:
             messages = [

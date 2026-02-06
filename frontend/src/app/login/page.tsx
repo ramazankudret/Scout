@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"
+
 export default function LoginPage() {
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
@@ -29,26 +31,38 @@ export default function LoginPage() {
             formBody.append('username', formData.username)
             formBody.append('password', formData.password)
 
-            const res = await fetch('http://localhost:8000/api/v1/auth/token', {
-                method: 'POST',
+            const res = await fetch(`${API_BASE}/auth/token`, {
+                method: "POST",
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    "Content-Type": "application/x-www-form-urlencoded",
                 },
-                body: formBody
+                body: formBody,
             })
 
+            if (res.status === 503) {
+                const body = await res.json().catch(() => ({}))
+                if (body.detail === "database_unavailable") {
+                    setError("Veritabanı bağlantısı yok. PostgreSQL'in çalıştığından veya .env içinde DATABASE_URL'in doğru olduğundan emin olun.")
+                    return
+                }
+            }
+
             if (!res.ok) {
-                throw new Error("Invalid username or password")
+                setError("Kullanıcı adı veya şifre hatalı.")
+                return
             }
 
             const data = await res.json()
-            // Store token
-            localStorage.setItem('token', data.access_token)
-            // Redirect to dashboard
-            router.push('/dashboard')
+            localStorage.setItem("token", data.access_token)
+            router.push("/dashboard")
 
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Login failed")
+            const msg = err instanceof Error ? err.message : ""
+            if (msg === "Failed to fetch" || (err instanceof TypeError && err.message?.includes("fetch"))) {
+                setError("Backend'e bağlanılamadı. API sunucusunun çalıştığından emin olun (http://localhost:8000).")
+            } else {
+                setError(msg || "Giriş başarısız.")
+            }
         } finally {
             setIsLoading(false)
         }

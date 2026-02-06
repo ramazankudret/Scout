@@ -18,6 +18,10 @@ from scout.infrastructure.api.v1.approvals import router as approvals_router
 from scout.infrastructure.api.v1.websocket import router as websocket_router
 from scout.infrastructure.api.v1.models import router as models_router
 from scout.infrastructure.api.v1.supervisor import router as supervisor_router
+from scout.infrastructure.api.v1.admin import router as admin_router
+from scout.infrastructure.api.v1.analytics import router as analytics_router
+from scout.infrastructure.api.v1.notifications import router as notifications_router
+from scout.infrastructure.api.v1.api_keys import router as api_keys_router
 
 router = APIRouter()
 
@@ -34,3 +38,7 @@ router.include_router(approvals_router, prefix="/approvals", tags=["Approvals"])
 router.include_router(websocket_router, tags=["WebSocket"])
 router.include_router(models_router, tags=["Models"])
 router.include_router(supervisor_router, tags=["Supervisor"])
+router.include_router(admin_router)
+router.include_router(analytics_router)
+router.include_router(notifications_router)
+router.include_router(api_keys_router)

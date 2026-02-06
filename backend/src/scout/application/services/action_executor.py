@@ -54,6 +54,26 @@ class ActionExecutor:
         action.executed_at = datetime.utcnow()
         await self.pending_action_repo.update(action)
 
+        # Pre-execution: check learned lessons and recommended checks (strategy update from Feedback Loop)
+        try:
+            from scout.agents.learning_engine import learning_engine
+            checks = learning_engine.get_prevention_checks(action.action_type)
+            advice = await learning_engine.get_lesson_advice(
+                action_type=action.action_type,
+                target=action.target,
+                context={"module": action.module_name},
+            )
+            if checks or advice:
+                logger.info(
+                    "action_pre_checks",
+                    action_type=action.action_type,
+                    target=action.target,
+                    recommended_checks=checks,
+                    lesson_advice_preview=advice[:200] if advice else None,
+                )
+        except Exception as e:
+            logger.debug("learning_engine_pre_check_skipped", action_type=action.action_type, error=str(e))
+
         try:
             # Execute action based on type
             result = await self._execute_action(

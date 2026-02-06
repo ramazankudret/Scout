@@ -6,6 +6,7 @@ Supports vector search for embedding-based lesson retrieval.
 """
 
 from typing import List, Optional
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,25 @@ class LearningRepository(BaseRepository[LearnedLesson], ILearningRepository):
     
     def __init__(self, session: AsyncSession):
         super().__init__(model=LearnedLesson, session=session)
+    
+    async def get_by_id(self, entity_id: UUID) -> Optional[LearnedLesson]:
+        """Get a lesson by ID (Repository interface)."""
+        return await self.get(entity_id)
+    
+    async def list_all(self, limit: int = 100, offset: int = 0) -> List[LearnedLesson]:
+        """List lessons with pagination (Repository interface)."""
+        return await self.get_all(skip=offset, limit=limit)
+    
+    async def save(self, entity: LearnedLesson) -> LearnedLesson:
+        """Save (create or update) a lesson (Repository interface)."""
+        self.session.add(entity)
+        await self.session.flush()
+        await self.session.refresh(entity)
+        return entity
+    
+    async def delete(self, entity_id: UUID) -> bool:
+        """Delete a lesson by ID (Repository interface)."""
+        return await super().delete(entity_id)
         
     async def find_similar(
         self, 

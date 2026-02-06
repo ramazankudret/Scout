@@ -52,13 +52,23 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Scout Brand Colors (Neon Cyberpunk)
+        // Scout premium workbench palette
         scout: {
-          neon: "#00f3ff",
-          purple: "#bc13fe",
-          danger: "#ff0055",
-          dark: "#050a14",
+          primary: "#00ffc8",
+          neon: "#00ffc8",
+          success: "#39d353",
+          danger: "#f85149",
+          warning: "#d29922",
+          accent: "#58a6ff",
+          muted: "#6e7681",
+          panel: "#161b22",
+          border: "#21262d",
+          dark: "#0a0e17",
         }
+      },
+      fontFamily: {
+        sans: ["var(--font-geometric)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       borderRadius: {
         lg: "var(--radius)",

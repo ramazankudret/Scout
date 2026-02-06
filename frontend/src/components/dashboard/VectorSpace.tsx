@@ -5,26 +5,94 @@ import { OrbitControls, Line, Html, Stars } from "@react-three/drei"
 import { EffectComposer, Bloom } from "@react-three/postprocessing"
 import { useRef, useMemo, useState } from "react"
 import * as THREE from "three"
+import { useQuery } from "@tanstack/react-query"
+import { assetsApi, type Asset } from "@/lib/api/client"
 
-// --- Subnet-Based Node Generation ---
-const generateMockNodes = () => {
-  const nodes: Array<{
-    id: string
-    position: THREE.Vector3
-    isAnomaly: boolean
-    category: string
-    data: {
-      ip: string
-      hostname: string
-      deviceType: string
-      status: string
-      os: string
-      lastSeen: string
-      openPorts: number
-      threatLevel: string
-      subnet: string
+export type NetworkNode = {
+  id: string
+  position: THREE.Vector3
+  isAnomaly: boolean
+  category: string
+  data: {
+    ip: string
+    hostname: string
+    deviceType: string
+    status: string
+    os: string
+    lastSeen: string
+    openPorts: number
+    threatLevel: string
+    subnet: string
+  }
+}
+
+// Zone layout by asset type (category)
+const ASSET_ZONES: Record<string, { x: number; y: number; z: number; radius: number }> = {
+  server: { x: 5, y: 0, z: 0, radius: 2.5 },
+  workstation: { x: -5, y: 0, z: 0, radius: 2.5 },
+  host: { x: 0, y: 0, z: 2, radius: 2 },
+  ip: { x: 0, y: 0, z: 0, radius: 2 },
+  network: { x: 0, y: 0, z: 0, radius: 1.5 },
+  router: { x: 0, y: 0, z: 0, radius: 0.8 },
+  firewall: { x: 0, y: 1.5, z: 0, radius: 0.8 },
+  database: { x: 0, y: -4, z: 0, radius: 1.5 },
+  iot: { x: 0, y: 4, z: 4, radius: 2 },
+  default: { x: 0, y: 0, z: 0, radius: 2 },
+}
+
+function parseSubnet(value: string): string {
+  const ipMatch = value.match(/(\d{1,3}\.\d{1,3}\.\d{1,3})\.?\d*/)
+  if (ipMatch) return ipMatch[1]
+  return "0.0.0"
+}
+
+function hashId(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) h = ((h << 5) - h) + id.charCodeAt(i) | 0
+  return Math.abs(h) / 2147483647
+}
+
+function assetsToNodes(assets: Asset[]): NetworkNode[] {
+  const byType: Record<string, number> = {}
+  return assets.map((asset, index) => {
+    const category = (asset.asset_type || "default").toLowerCase()
+    const zone = ASSET_ZONES[category] ?? ASSET_ZONES.default
+    byType[category] = (byType[category] ?? 0) + 1
+    const i = byType[category] - 1
+    const count = byType[category]
+    const angle = (i / Math.max(1, count)) * Math.PI * 2 + hashId(asset.id) * 0.5
+    const dist = zone.radius * (0.4 + (index % 3) * 0.2)
+    const x = zone.x + Math.cos(angle) * dist
+    const y = zone.y + (hashId(asset.id + "y") - 0.5) * 1
+    const z = zone.z + Math.sin(angle) * dist
+
+    const subnet = parseSubnet(asset.value)
+    const isAnomaly = asset.risk_score >= 70 || asset.status === "critical" || asset.vulnerability_count > 0
+    const threatLevel = asset.risk_score >= 80 ? "HIGH" : asset.risk_score >= 50 ? "MEDIUM" : "LOW"
+
+    return {
+      id: asset.id,
+      position: new THREE.Vector3(x, y, z),
+      isAnomaly,
+      category: asset.asset_type || "Asset",
+      data: {
+        ip: asset.value,
+        hostname: asset.label || asset.value,
+        deviceType: asset.asset_type || "host",
+        status: asset.status || "unknown",
+        os: asset.environment || "—",
+        lastSeen: "—",
+        openPorts: asset.open_ports?.length ?? 0,
+        threatLevel,
+        subnet,
+      },
     }
-  }> = []
+  })
+}
+
+// --- Fallback mock nodes when no assets ---
+const generateMockNodes = (): NetworkNode[] => {
+  const nodes: NetworkNode[] = []
 
   // Define network zones (subnets) - spread wider with fewer nodes
   const categories = [
@@ -75,8 +143,8 @@ const generateMockNodes = () => {
 
 // --- Single Clickable Node ---
 function NetworkNode({ node, isSelected, onClick }: {
-  node: ReturnType<typeof generateMockNodes>[0],
-  isSelected: boolean,
+  node: NetworkNode
+  isSelected: boolean
   onClick: () => void
 }) {
   const meshRef = useRef<THREE.Mesh>(null)
@@ -178,12 +246,15 @@ function CoreSphere() {
 }
 
 // --- Smart Network Connections ---
-function NetworkConnections({ nodes }: { nodes: ReturnType<typeof generateMockNodes> }) {
+function NetworkConnections({ nodes }: { nodes: NetworkNode[] }) {
   const connections = useMemo(() => {
     const conns: [THREE.Vector3, THREE.Vector3, boolean, string][] = []
 
     // Find hubs (routers/firewalls)
-    const hubs = nodes.filter(n => n.category === "Router" || n.category === "Firewall")
+    const hubs = nodes.filter(n => {
+      const c = n.category.toLowerCase()
+      return c === "router" || c === "firewall" || c === "network"
+    })
 
     // 1. Same subnet connections
     for (let i = 0; i < nodes.length; i++) {
@@ -207,8 +278,8 @@ function NetworkConnections({ nodes }: { nodes: ReturnType<typeof generateMockNo
     })
 
     // 3. Database connections
-    const databases = nodes.filter(n => n.category === "Database")
-    const servers = nodes.filter(n => n.category === "Server")
+    const databases = nodes.filter(n => n.category.toLowerCase() === "database")
+    const servers = nodes.filter(n => n.category.toLowerCase() === "server")
 
     databases.forEach(db => {
       servers.forEach(server => {
@@ -287,9 +358,17 @@ function DataStreams() {
 
 // --- Main Component ---
 export default function VectorSpace() {
-  const [selectedNode, setSelectedNode] = useState<ReturnType<typeof generateMockNodes>[0] | null>(null)
+  const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null)
+  const { data: assetsData } = useQuery({
+    queryKey: ["assets", "list"],
+    queryFn: () => assetsApi.list({ limit: 500 }),
+  })
 
-  const nodes = useMemo(() => generateMockNodes(), [])
+  const nodes = useMemo(() => {
+    const items = assetsData?.items
+    if (items?.length) return assetsToNodes(items)
+    return generateMockNodes()
+  }, [assetsData?.items])
   const anomalyCount = useMemo(() => nodes.filter(n => n.isAnomaly).length, [nodes])
 
   return (

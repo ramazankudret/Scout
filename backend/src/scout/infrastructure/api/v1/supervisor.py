@@ -7,11 +7,15 @@ Provides endpoints for:
 - Getting supervisor summary
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from scout.agents.supervisor import supervisor, AgentStatus
 from scout.agents.learning_engine import learning_engine, LessonCategory
 from scout.core.logger import get_logger
+from scout.infrastructure.database import get_db
+from scout.infrastructure.repositories.supervisor_repository import SupervisorRepository
 
 router = APIRouter(prefix="/supervisor", tags=["Supervisor"])
 logger = get_logger("supervisor_api")
@@ -71,6 +75,18 @@ class AnalyzeFailureRequest(BaseModel):
     error_message: str
     error_type: str = ""
     context: dict | None = None
+
+
+class SupervisorEventResponse(BaseModel):
+    """Supervisor event (escalation, restart, etc.)."""
+    id: str
+    event_type: str
+    target_agent: str | None
+    trigger_reason: str | None
+    action_taken: str | None
+    outcome: str | None
+    is_automated: bool
+    timestamp: str
 
 
 # ==================== Supervisor Endpoints ====================
@@ -156,6 +172,33 @@ async def register_agent(agent_name: str):
     return {"message": f"Agent '{agent_name}' registered successfully"}
 
 
+@router.get("/events", response_model=list[SupervisorEventResponse])
+async def get_supervisor_events(
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+    event_type: str | None = Query(None, description="Filter by event_type (e.g. ESCALATION, AUTO_RESTART)"),
+):
+    """
+    Get recent supervisor events (escalations, auto-restarts, etc.).
+    """
+    repo = SupervisorRepository(db)
+    event_types = [event_type] if event_type else None
+    events = await repo.get_recent_events(limit=limit, event_types=event_types)
+    return [
+        SupervisorEventResponse(
+            id=str(e.id),
+            event_type=e.event_type,
+            target_agent=e.target_agent,
+            trigger_reason=e.trigger_reason,
+            action_taken=e.action_taken,
+            outcome=e.outcome,
+            is_automated=e.is_automated,
+            timestamp=e.timestamp.isoformat() if e.timestamp else "",
+        )
+        for e in events
+    ]
+
+
 # ==================== Learning Engine Endpoints ====================
 
 @router.get("/lessons", response_model=list[LessonResponse])
@@ -168,15 +211,15 @@ async def get_all_lessons():
     return [
         LessonResponse(
             id=lesson.id,
-            agent_name=lesson.agent_name,
-            action_type=lesson.action_type,
-            root_cause=lesson.root_cause,
-            category=lesson.category.value,
-            severity=lesson.severity.value,
-            prevention_strategy=lesson.prevention_strategy,
-            recommended_checks=lesson.recommended_checks,
-            occurrence_count=lesson.occurrence_count,
-            effectiveness_rate=lesson.effectiveness_rate,
+            agent_name=lesson.agent_name or "",
+            action_type=lesson.action_type or "",
+            root_cause=lesson.root_cause or "",
+            category=getattr(lesson.category, "value", lesson.category) or "",
+            severity=getattr(lesson.severity, "value", lesson.severity) or "",
+            prevention_strategy=lesson.prevention_strategy or "",
+            recommended_checks=lesson.recommended_checks or [],
+            occurrence_count=lesson.occurrence_count or 1,
+            effectiveness_rate=lesson.effectiveness_rate or 0.0,
         )
         for lesson in lessons
     ]
@@ -200,15 +243,15 @@ async def get_lessons_by_category(category: str):
     return [
         LessonResponse(
             id=lesson.id,
-            agent_name=lesson.agent_name,
-            action_type=lesson.action_type,
-            root_cause=lesson.root_cause,
-            category=lesson.category.value,
-            severity=lesson.severity.value,
-            prevention_strategy=lesson.prevention_strategy,
-            recommended_checks=lesson.recommended_checks,
-            occurrence_count=lesson.occurrence_count,
-            effectiveness_rate=lesson.effectiveness_rate,
+            agent_name=lesson.agent_name or "",
+            action_type=lesson.action_type or "",
+            root_cause=lesson.root_cause or "",
+            category=getattr(lesson.category, "value", lesson.category) or "",
+            severity=getattr(lesson.severity, "value", lesson.severity) or "",
+            prevention_strategy=lesson.prevention_strategy or "",
+            recommended_checks=lesson.recommended_checks or [],
+            occurrence_count=lesson.occurrence_count or 1,
+            effectiveness_rate=lesson.effectiveness_rate or 0.0,
         )
         for lesson in lessons
     ]
@@ -258,15 +301,15 @@ async def analyze_failure(request: AnalyzeFailureRequest):
     
     return LessonResponse(
         id=lesson.id,
-        agent_name=lesson.agent_name,
-        action_type=lesson.action_type,
-        root_cause=lesson.root_cause,
-        category=lesson.category.value,
-        severity=lesson.severity.value,
-        prevention_strategy=lesson.prevention_strategy,
-        recommended_checks=lesson.recommended_checks,
-        occurrence_count=lesson.occurrence_count,
-        effectiveness_rate=lesson.effectiveness_rate,
+        agent_name=lesson.agent_name or "",
+        action_type=lesson.action_type or "",
+        root_cause=lesson.root_cause or "",
+        category=getattr(lesson.category, "value", lesson.category) or "",
+        severity=getattr(lesson.severity, "value", lesson.severity) or "",
+        prevention_strategy=lesson.prevention_strategy or "",
+        recommended_checks=lesson.recommended_checks or [],
+        occurrence_count=lesson.occurrence_count or 1,
+        effectiveness_rate=lesson.effectiveness_rate or 0.0,
     )
 
 

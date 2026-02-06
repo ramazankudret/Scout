@@ -107,3 +107,19 @@ class SupervisorRepository(ISupervisorRepository):
         self.session.add(metric)
         await self.session.flush()
         return metric
+
+    async def get_recent_events(
+        self,
+        limit: int = 20,
+        event_types: Optional[List[str]] = None,
+    ) -> List[SupervisorEvent]:
+        """Get recent supervisor events (ESCALATION, AUTO_RESTART, etc.)."""
+        query = (
+            select(SupervisorEvent)
+            .order_by(desc(SupervisorEvent.timestamp))
+            .limit(limit)
+        )
+        if event_types:
+            query = query.where(SupervisorEvent.event_type.in_(event_types))
+        result = await self.session.execute(query)
+        return list(result.scalars().all())

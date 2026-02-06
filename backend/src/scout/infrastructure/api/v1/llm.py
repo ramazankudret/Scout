@@ -9,6 +9,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from scout.application.services.log_preprocessor import preprocess as preprocess_logs
+from scout.core.config import get_settings
 from scout.core.logging import get_logger
 from scout.infrastructure.llm import OllamaService
 
@@ -125,15 +127,35 @@ async def analyze_logs(request: AnalyzeLogsRequest) -> dict[str, Any]:
     """
     Analyze log data for anomalies and security issues.
 
-    Provide raw logs and a query describing what to look for.
+    Raw logs are preprocessed (priority filter + quota); under high load
+    hybrid mode uses the fast model and stricter limits. Response includes
+    analysis_meta (total_lines, lines_analyzed, hybrid_mode_used, etc.).
     """
     try:
-        service = get_llm_service()
+        settings = get_settings()
+        line_count = len([ln for ln in request.logs.strip().splitlines() if ln.strip()])
+        hybrid = line_count >= settings.log_high_load_threshold_lines
+
+        preprocessed = preprocess_logs(request.logs, request.query, hybrid=hybrid)
+
+        if hybrid:
+            service = OllamaService(model=settings.ollama_fast_model)
+        else:
+            service = get_llm_service()
+
         result = await service.analyze_logs(
-            logs=request.logs,
+            logs=preprocessed.content,
             query=request.query,
         )
         result["model"] = service.model
+        result["analysis_meta"] = {
+            "total_lines": preprocessed.total_lines,
+            "lines_analyzed": preprocessed.lines_analyzed,
+            "priority_lines_included": preprocessed.priority_lines_included,
+            "rest_lines_dropped": preprocessed.rest_lines_dropped,
+            "was_truncated": preprocessed.was_truncated,
+            "hybrid_mode_used": preprocessed.hybrid_mode_used,
+        }
         return result
     except Exception as e:
         logger.error("log_analysis_endpoint_error", error=str(e))

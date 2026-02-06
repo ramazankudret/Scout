@@ -24,6 +24,20 @@ class PendingActionRepository(BaseRepository[PendingAction]):
     def __init__(self, session: AsyncSession):
         super().__init__(PendingAction, session)
 
+    async def create(self, entity: PendingAction) -> PendingAction:
+        """Persist a PendingAction entity."""
+        self.session.add(entity)
+        await self.session.flush()
+        await self.session.refresh(entity)
+        return entity
+
+    async def update(self, entity: PendingAction) -> PendingAction:
+        """Update an existing PendingAction (merge and flush)."""
+        self.session.add(entity)
+        await self.session.flush()
+        await self.session.refresh(entity)
+        return entity
+
     async def get_by_user(
         self,
         user_id: UUID,

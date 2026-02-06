@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"
+
 export default function RegisterPage() {
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
@@ -33,28 +35,41 @@ export default function RegisterPage() {
         }
 
         try {
-            const res = await fetch('http://localhost:8000/api/v1/auth/register', {
-                method: 'POST',
+            const res = await fetch(`${API_BASE}/auth/register`, {
+                method: "POST",
                 headers: {
-                    'Content-Type': 'application/json',
+                    "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
                     username: formData.username,
                     email: formData.email,
-                    password: formData.password
-                })
+                    password: formData.password,
+                }),
             })
 
-            if (!res.ok) {
-                const data = await res.json()
-                throw new Error(data.detail || "Registration failed")
+            if (res.status === 503) {
+                const body = await res.json().catch(() => ({}))
+                if (body.detail === "database_unavailable") {
+                    setError("Veritabanı bağlantısı yok. Backend ve PostgreSQL'in çalıştığından emin olun.")
+                    return
+                }
             }
 
-            // Redirect to login
-            router.push('/login?registered=true')
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                setError(Array.isArray(data.detail) ? data.detail.map((x: { msg: string }) => x.msg).join(", ") : (data.detail || "Kayıt başarısız."))
+                return
+            }
+
+            router.push("/login?registered=true")
 
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Registration failed")
+            const msg = err instanceof Error ? err.message : ""
+            if (msg === "Failed to fetch" || (err instanceof TypeError && (err as Error).message?.includes("fetch"))) {
+                setError("Backend'e bağlanılamadı. API sunucusunun çalıştığından emin olun (http://localhost:8000).")
+            } else {
+                setError(msg || "Kayıt başarısız.")
+            }
         } finally {
             setIsLoading(false)
         }

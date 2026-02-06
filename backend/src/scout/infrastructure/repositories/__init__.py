@@ -8,6 +8,7 @@ from scout.infrastructure.repositories.repositories import (
     IncidentRepository,
     AgentRunRepository,
     NotificationRepository,
+    ApiKeyRepository,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "IncidentRepository",
     "AgentRunRepository",
     "NotificationRepository",
+    "ApiKeyRepository",
 ]
