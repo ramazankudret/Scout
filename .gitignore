@@ -69,3 +69,24 @@ data/lesson_model_output/
 
 # Python cache
 *.pyc
+
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Windows Python venv (sende var)
+Lib/
+Include/
+Scripts/
+pyvenv.cfg
+
+
+# Env
+.env
+
