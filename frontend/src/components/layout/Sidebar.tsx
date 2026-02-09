@@ -111,15 +111,15 @@ export function Sidebar() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-scout-panel backdrop-blur-xl border-r border-scout-border w-64">
-      <div className="p-6 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-scout-primary/15 flex items-center justify-center ring-1 ring-scout-primary/50">
-          <Shield className="w-4 h-4 text-scout-primary" />
+    <div className="flex flex-col h-full bg-scout-panel/95 backdrop-blur-xl border-r border-scout-border w-56 shrink-0">
+      <div className="px-4 py-4 flex items-center gap-2.5 border-b border-scout-border/80">
+        <div className="w-7 h-7 rounded-md bg-scout-primary/15 flex items-center justify-center ring-1 ring-scout-primary/40">
+          <Shield className="w-3.5 h-3.5 text-scout-primary" />
         </div>
-        <span className="font-mono font-bold text-xl tracking-wider text-foreground">SCOUT</span>
+        <span className="font-mono font-bold text-sm tracking-widest text-foreground">SCOUT</span>
       </div>
 
-      <div className="flex-1 py-4 flex flex-col gap-0 px-3 overflow-y-auto">
+      <div className="flex-1 py-3 flex flex-col gap-0 px-2 overflow-y-auto">
         {navGroups.map((group) => {
           const isOpen = openGroups[group.label] ?? false
           const GroupIcon = group.icon
@@ -129,32 +129,32 @@ export function Sidebar() {
                 type="button"
                 onClick={() => toggleGroup(group.label)}
                 className={cn(
-                  "flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors",
+                  "flex items-center gap-2 w-full px-2.5 py-2 rounded-md text-left text-xs font-medium transition-colors",
                   "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                 )}
               >
                 {isOpen ? (
-                  <ChevronDown className="w-4 h-4 flex-shrink-0" />
+                  <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                  <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
                 )}
-                <GroupIcon className="w-4 h-4 flex-shrink-0 text-scout-primary/80" />
+                <GroupIcon className="w-3.5 h-3.5 flex-shrink-0 text-scout-primary/80" />
                 <span>{group.label}</span>
               </button>
               {isOpen && (
-                <div className="ml-4 mt-0.5 space-y-0.5 border-l border-scout-border pl-2">
+                <div className="ml-3 mt-0.5 space-y-0.5 border-l border-scout-border/80 pl-2">
                   {group.items.map((item) => (
                     <Link
                       key={item.href + item.title}
                       href={item.href}
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-md transition-all text-sm font-medium",
+                        "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md transition-all text-xs font-medium",
                         pathname === item.href
                           ? "bg-scout-primary/10 text-foreground border border-scout-primary/30"
                           : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                       )}
                     >
-                      <item.icon className={cn("w-4 h-4 flex-shrink-0", item.color)} />
+                      <item.icon className={cn("w-3.5 h-3.5 flex-shrink-0", item.color)} />
                       {item.title}
                     </Link>
                   ))}
@@ -165,12 +165,12 @@ export function Sidebar() {
         })}
       </div>
 
-      <div className="p-4 border-t border-scout-border">
+      <div className="p-3 border-t border-scout-border/80">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-scout-danger hover:bg-scout-danger/10 transition-colors text-sm font-medium"
+          className="flex items-center gap-2.5 px-3 py-2.5 w-full rounded-md text-scout-danger hover:bg-scout-danger/10 transition-colors text-xs font-medium"
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-4 h-4" />
           Sign Out
         </button>
       </div>

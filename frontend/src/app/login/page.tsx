@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Shield, Lock, Mail, ArrowRight, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -10,11 +10,28 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"
+const BACKEND_ROOT = API_BASE.replace(/\/api\/v1\/?$/, "") || "http://localhost:8000"
+
+function setBackendUnreachableError(setError: (s: string) => void) {
+    setError(
+        `Backend'e bağlanılamadı (${BACKEND_ROOT}). Kontrol edin: 1) Backend container çalışıyor mu? (docker ps) 2) Tarayıcıdan açın: ${BACKEND_ROOT}/api/v1/health 3) Windows'ta 127.0.0.1 deneyin: NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1 ile frontend'i yeniden başlatın.`
+    )
+}
 
 export default function LoginPage() {
     const router = useRouter()
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [backendCheckDone, setBackendCheckDone] = useState(false)
+
+    useEffect(() => {
+        let cancelled = false
+        fetch(`${API_BASE}/health`, { method: "GET" })
+            .then(() => { if (!cancelled) setError(null) })
+            .catch(() => { if (!cancelled) setBackendUnreachableError(setError) })
+            .finally(() => { if (!cancelled) setBackendCheckDone(true) })
+        return () => { cancelled = true }
+    }, [])
 
     const [formData, setFormData] = useState({
         username: "",
@@ -59,7 +76,7 @@ export default function LoginPage() {
         } catch (err) {
             const msg = err instanceof Error ? err.message : ""
             if (msg === "Failed to fetch" || (err instanceof TypeError && err.message?.includes("fetch"))) {
-                setError("Backend'e bağlanılamadı. API sunucusunun çalıştığından emin olun (http://localhost:8000).")
+                setBackendUnreachableError(setError)
             } else {
                 setError(msg || "Giriş başarısız.")
             }

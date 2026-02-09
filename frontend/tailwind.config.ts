@@ -52,7 +52,7 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Scout premium workbench palette
+        // Scout premium workbench / SOC palette
         scout: {
           primary: "#00ffc8",
           neon: "#00ffc8",
@@ -63,6 +63,9 @@ const config = {
           muted: "#6e7681",
           panel: "#161b22",
           border: "#21262d",
+          "panel-border": "hsl(var(--panel-border, 215 18% 14%))",
+          terminal: "hsl(var(--terminal-bg, 220 25% 5%))",
+          grid: "hsl(var(--grid-dot, 215 15% 22%))",
           dark: "#0a0e17",
         }
       },

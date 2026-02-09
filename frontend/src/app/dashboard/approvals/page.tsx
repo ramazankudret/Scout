@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { approvalsApi, PendingAction, ApiError } from "@/lib/api/client";
+import { approvalsApi, PendingAction } from "@/lib/api/client";
 import { AlertCircle, CheckCircle, XCircle, ShieldAlert, Clock, Activity } from "lucide-react";
 
 export default function ApprovalsPage() {
@@ -41,11 +41,8 @@ export default function ApprovalsPage() {
             // Remove from list immediately (Optimistic update)
             setActions(prev => prev.filter(a => a.id !== id));
         } catch (err) {
-            if (err instanceof ApiError) {
-                alert(`Error: ${err.message}`);
-            } else {
-                alert("Failed to approve action");
-            }
+            const msg = err instanceof Error ? err.message : "Failed to approve action";
+            alert(msg);
         } finally {
             setProcessingId(null);
         }

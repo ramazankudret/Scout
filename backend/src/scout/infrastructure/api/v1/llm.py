@@ -4,14 +4,19 @@ LLM API Endpoints.
 Provides endpoints for testing and using the local LLM (Ollama).
 """
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from scout.application.services.llm_context_builder import build_llm_context
 from scout.application.services.log_preprocessor import preprocess as preprocess_logs
 from scout.core.config import get_settings
 from scout.core.logging import get_logger
+from scout.infrastructure.api.v1.auth import get_current_user_optional
+from scout.infrastructure.database import get_db
+from scout.infrastructure.database import User
 from scout.infrastructure.llm import OllamaService
 
 router = APIRouter()
@@ -37,6 +42,8 @@ class ChatRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=4000)
     system_prompt: str | None = None
+    model: str | None = None
+    task_hint: str | None = None  # "general" | "analysis" for auto model selection
 
 
 class ChatResponse(BaseModel):
@@ -101,17 +108,39 @@ async def llm_health_check() -> dict[str, Any]:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_user_optional)] = None,
+) -> ChatResponse:
     """
     Simple chat interface with the LLM.
 
     Use this for general security-related questions.
+    If model is provided, that Ollama model is used; otherwise default or task_hint.
+    When task_hint=analysis and user is logged in, recent traffic/scan/asset context is injected.
     """
     try:
-        service = get_llm_service()
+        settings = get_settings()
+        if request.model:
+            service = OllamaService(model=request.model)
+        elif request.task_hint == "analysis":
+            service = OllamaService(model=settings.ollama_reasoning_model)
+        else:
+            service = get_llm_service()
+
+        system_prompt = request.system_prompt
+        if request.task_hint == "analysis" and current_user is not None:
+            try:
+                context = await build_llm_context(db, current_user.id)
+                if context:
+                    system_prompt = (system_prompt or "") + "\n\n" + context
+            except Exception as e:
+                logger.warning("llm_context_build_failed", error=str(e))
+
         response = await service.chat(
             message=request.message,
-            system_prompt=request.system_prompt,
+            system_prompt=system_prompt or None,
         )
         return ChatResponse(response=response, model=service.model)
     except Exception as e:

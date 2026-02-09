@@ -14,14 +14,17 @@ import {
 import PipelineViz from "@/components/dashboard/PipelineViz"
 import Link from "next/link"
 
-const VectorSpace = dynamic(() => import("@/components/dashboard/VectorSpace"), {
-    ssr: false,
-    loading: () => (
-        <div className="w-full h-full flex items-center justify-center">
-            <div className="text-scout-neon animate-pulse">Loading 3D Space...</div>
-        </div>
-    ),
-})
+const VectorSpace = dynamic(
+    () => import("@/components/dashboard/VectorSpace").then((m) => m.default),
+    {
+        ssr: false,
+        loading: () => (
+            <div className="w-full h-full flex items-center justify-center">
+                <div className="text-scout-neon animate-pulse">Loading 3D Space...</div>
+            </div>
+        ),
+    }
+)
 
 function useDashboardData() {
     const threatStats = useQuery({

@@ -2,11 +2,12 @@
 
 import { Canvas, useFrame } from "@react-three/fiber"
 import { OrbitControls, Line, Html, Stars } from "@react-three/drei"
-import { EffectComposer, Bloom } from "@react-three/postprocessing"
-import { useRef, useMemo, useState } from "react"
+import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing"
+import { BlendFunction } from "postprocessing"
+import { useRef, useMemo, useState, useLayoutEffect } from "react"
 import * as THREE from "three"
 import { useQuery } from "@tanstack/react-query"
-import { assetsApi, type Asset } from "@/lib/api/client"
+import { assetsApi, topologyApi, type Asset, type TopologyNode, type TopologyEdge, type TopologyThreat } from "@/lib/api/client"
 
 export type NetworkNode = {
   id: string
@@ -83,6 +84,86 @@ function assetsToNodes(assets: Asset[]): NetworkNode[] {
         os: asset.environment || "—",
         lastSeen: "—",
         openPorts: asset.open_ports?.length ?? 0,
+        threatLevel,
+        subnet,
+      },
+    }
+  })
+}
+
+const SCOUT_ONLY_NODES: NetworkNode[] = [
+  {
+    id: "scout",
+    position: new THREE.Vector3(0, 0, 0),
+    isAnomaly: false,
+    category: "Scout",
+    data: {
+      ip: "",
+      hostname: "Scout",
+      deviceType: "Scout",
+      status: "online",
+      os: "—",
+      lastSeen: "—",
+      openPorts: 0,
+      threatLevel: "LOW",
+      subnet: "0.0.0",
+    },
+  },
+]
+
+function topologyNodesToNetworkNodes(topologyNodes: TopologyNode[]): NetworkNode[] {
+  const byType: Record<string, number> = {}
+  const origin = new THREE.Vector3(0, 0, 0)
+
+  return topologyNodes.map((n, index) => {
+    if (n.is_scout) {
+      return {
+        id: "scout",
+        position: origin.clone(),
+        isAnomaly: false,
+        category: "Scout",
+        data: {
+          ip: "",
+          hostname: "Scout",
+          deviceType: "Scout",
+          status: "online",
+          os: "—",
+          lastSeen: "—",
+          openPorts: 0,
+          threatLevel: "LOW",
+          subnet: "0.0.0",
+        },
+      }
+    }
+
+    const category = (n.asset_type || "ip").toLowerCase()
+    const zone = ASSET_ZONES[category] ?? ASSET_ZONES.default
+    byType[category] = (byType[category] ?? 0) + 1
+    const i = byType[category] - 1
+    const count = byType[category]
+    const angle = (i / Math.max(1, count)) * Math.PI * 2 + hashId(n.id) * 0.5
+    const dist = zone.radius * (0.4 + (index % 3) * 0.2)
+    const x = zone.x + Math.cos(angle) * dist
+    const y = zone.y + (hashId(n.id + "y") - 0.5) * 1
+    const z = zone.z + Math.sin(angle) * dist
+
+    const subnet = parseSubnet(n.value)
+    const isAnomaly = n.risk_score >= 70 || n.status === "critical" || (n.open_ports?.length ?? 0) > 0
+    const threatLevel = n.risk_score >= 80 ? "HIGH" : n.risk_score >= 50 ? "MEDIUM" : "LOW"
+
+    return {
+      id: n.id,
+      position: new THREE.Vector3(x, y, z),
+      isAnomaly,
+      category: n.asset_type || "Asset",
+      data: {
+        ip: n.value,
+        hostname: n.label || n.value,
+        deviceType: n.asset_type || "host",
+        status: n.status || "unknown",
+        os: "—",
+        lastSeen: "—",
+        openPorts: n.open_ports?.length ?? 0,
         threatLevel,
         subnet,
       },
@@ -178,26 +259,30 @@ function NetworkNode({ node, isSelected, onClick }: {
         onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer' }}
         onPointerOut={() => { setHovered(false); document.body.style.cursor = 'auto' }}
       >
-        <sphereGeometry args={[node.isAnomaly ? 0.18 : 0.08, 16, 16]} />
+        <sphereGeometry args={[node.isAnomaly ? 0.18 : 0.08, 24, 24]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={isSelected ? 5 : (hovered ? 3 : (node.isAnomaly ? 2 : 0.5))}
+          emissiveIntensity={isSelected ? 6 : (hovered ? 3.5 : (node.isAnomaly ? 2.2 : 0.6))}
+          metalness={0.15}
+          roughness={0.7}
           toneMapped={false}
         />
       </mesh>
 
       {(hovered || isSelected) && (
         <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.25, 0.3, 32]} />
-          <meshBasicMaterial color={color} transparent opacity={0.5} side={THREE.DoubleSide} />
+          <ringGeometry args={[0.28, 0.34, 32]} />
+          <meshBasicMaterial color={color} transparent opacity={hovered || isSelected ? 0.7 : 0.5} side={THREE.DoubleSide} />
         </mesh>
       )}
 
       {hovered && !isSelected && (
         <Html center distanceFactor={8} style={{ pointerEvents: 'none' }}>
-          <div className="bg-black/80 border border-scout-neon/50 px-2 py-1 rounded text-xs text-scout-neon font-mono whitespace-nowrap backdrop-blur-sm">
-            {node.data.hostname} ({node.data.subnet}.x)
+          <div className="bg-black/90 border border-scout-neon/50 px-2 py-1.5 rounded text-xs text-scout-neon font-mono whitespace-nowrap backdrop-blur-sm shadow-lg">
+            <div className="font-semibold">{node.data.hostname || node.data.ip}</div>
+            {node.data.ip && <div className="text-scout-neon/70 text-[10px]">{node.data.ip}</div>}
+            <div className="text-scout-neon/60 text-[10px]">{node.data.deviceType} · {node.data.status}</div>
           </div>
         </Html>
       )}
@@ -205,107 +290,138 @@ function NetworkNode({ node, isSelected, onClick }: {
   )
 }
 
-// --- Core Sphere ---
+// --- Core Sphere (tech wireframe + orbit ring + inner glow) ---
 function CoreSphere() {
   const meshRef = useRef<THREE.Mesh>(null)
   const glowRef = useRef<THREE.Mesh>(null)
+  const ringRef = useRef<THREE.Mesh>(null)
 
   useFrame((state) => {
+    const t = state.clock.elapsedTime
     if (meshRef.current) {
-      meshRef.current.rotation.y = state.clock.elapsedTime * 0.15
-      meshRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.3) * 0.1
+      meshRef.current.rotation.y = t * 0.15
+      meshRef.current.rotation.x = Math.sin(t * 0.3) * 0.12
     }
     if (glowRef.current) {
-      const pulse = 1 + Math.sin(state.clock.elapsedTime * 0.8) * 0.1
+      const pulse = 1 + Math.sin(t * 0.8) * 0.12
       glowRef.current.scale.setScalar(pulse)
+    }
+    if (ringRef.current) {
+      ringRef.current.rotation.x = Math.PI / 2
+      ringRef.current.rotation.z = t * 0.2
     }
   })
 
   return (
     <group>
+      {/* Outer wireframe sphere */}
       <mesh ref={meshRef}>
-        <icosahedronGeometry args={[0.8, 2]} />
-        <meshBasicMaterial color="#00f3ff" wireframe transparent opacity={0.2} />
+        <icosahedronGeometry args={[0.85, 2]} />
+        <meshBasicMaterial color="#00f3ff" wireframe transparent opacity={0.25} />
       </mesh>
+      {/* Orbit ring */}
+      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.1, 0.012, 8, 64]} />
+        <meshBasicMaterial color="#00f3ff" transparent opacity={0.5} />
+      </mesh>
+      {/* Inner glow core */}
       <mesh ref={glowRef}>
-        <sphereGeometry args={[0.5, 32, 32]} />
+        <sphereGeometry args={[0.45, 32, 32]} />
         <meshStandardMaterial
-          color="#00f3ff"
-          emissive="#00f3ff"
-          emissiveIntensity={3}
+          color="#00ffc8"
+          emissive="#00ffc8"
+          emissiveIntensity={4}
+          metalness={0.1}
+          roughness={0.2}
           transparent
-          opacity={0.8}
+          opacity={0.9}
+          toneMapped={false}
         />
       </mesh>
+      {/* Soft outer halo */}
       <mesh>
-        <sphereGeometry args={[1.5, 32, 32]} />
-        <meshBasicMaterial color="#00f3ff" transparent opacity={0.03} />
+        <sphereGeometry args={[1.6, 32, 32]} />
+        <meshBasicMaterial color="#00f3ff" transparent opacity={0.04} />
       </mesh>
     </group>
   )
 }
 
-// --- Smart Network Connections ---
-function NetworkConnections({ nodes }: { nodes: NetworkNode[] }) {
-  const connections = useMemo(() => {
-    const conns: [THREE.Vector3, THREE.Vector3, boolean, string][] = []
+// --- IP -> position map for edges/threats ---
+function ipToPositionMap(nodes: NetworkNode[]): Map<string, THREE.Vector3> {
+  const m = new Map<string, THREE.Vector3>()
+  nodes.forEach(n => {
+    if (n.data.ip) m.set(n.data.ip, n.position)
+    if (n.id === "scout") m.set("scout", n.position)
+  })
+  return m
+}
 
-    // Find hubs (routers/firewalls)
+// --- Smart Network Connections (real edges from topology or heuristic fallback) ---
+function NetworkConnections({ nodes, edges }: { nodes: NetworkNode[]; edges?: TopologyEdge[] | null }) {
+  const connections = useMemo(() => {
+    const ipPos = ipToPositionMap(nodes)
+
+    if (edges?.length) {
+      const conns: [THREE.Vector3, THREE.Vector3, number][] = []
+      for (const e of edges) {
+        const start = ipPos.get(e.source_ip)
+        const end = ipPos.get(e.destination_ip)
+        if (start && end) {
+          const weight = e.packet_count ?? 1
+          conns.push([start, end, weight])
+        }
+      }
+      return conns.map(([start, end, weight]) => [start, end, false, "traffic", weight] as const)
+    }
+
+    // Heuristic fallback when no topology edges
+    const conns: [THREE.Vector3, THREE.Vector3, boolean, string, number][] = []
     const hubs = nodes.filter(n => {
       const c = n.category.toLowerCase()
       return c === "router" || c === "firewall" || c === "network"
     })
 
-    // 1. Same subnet connections
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const sameSubnet = nodes[i].data.subnet === nodes[j].data.subnet
         const dist = nodes[i].position.distanceTo(nodes[j].position)
-
         if (sameSubnet && dist < 2.5 && Math.random() < 0.4) {
-          conns.push([nodes[i].position, nodes[j].position, nodes[i].isAnomaly || nodes[j].isAnomaly, "subnet"])
+          conns.push([nodes[i].position, nodes[j].position, nodes[i].isAnomaly || nodes[j].isAnomaly, "subnet", 1])
         }
       }
     }
-
-    // 2. Hub connections (routers connect everything)
     hubs.forEach(hub => {
       nodes.forEach(node => {
         if (hub.id !== node.id && Math.random() < 0.12) {
-          conns.push([hub.position, node.position, hub.isAnomaly || node.isAnomaly, "hub"])
+          conns.push([hub.position, node.position, hub.isAnomaly || node.isAnomaly, "hub", 1])
         }
       })
     })
-
-    // 3. Database connections
     const databases = nodes.filter(n => n.category.toLowerCase() === "database")
     const servers = nodes.filter(n => n.category.toLowerCase() === "server")
-
     databases.forEach(db => {
       servers.forEach(server => {
         if (Math.random() < 0.2) {
-          conns.push([server.position, db.position, db.isAnomaly || server.isAnomaly, "db"])
+          conns.push([server.position, db.position, db.isAnomaly || server.isAnomaly, "db", 1])
         }
       })
     })
-
-    // 4. Core router connections
     hubs.forEach(hub => {
       if (Math.random() < 0.7) {
-        conns.push([hub.position, new THREE.Vector3(0, 0, 0), hub.isAnomaly, "core"])
+        conns.push([hub.position, new THREE.Vector3(0, 0, 0), hub.isAnomaly, "core", 1])
       }
     })
-
     return conns
-  }, [nodes])
+  }, [nodes, edges])
 
   return (
     <group>
       {connections.map((conn, i) => {
-        const [start, end, isAnomaly, type] = conn
-        const lineWidth = type === "db" ? 0.6 : (type === "hub" ? 0.4 : 0.3)
-        const opacity = isAnomaly ? 0.15 : (type === "core" ? 0.08 : 0.1)
-        const color = isAnomaly ? "#ff0055" : (type === "db" ? "#bc13fe" : "#00f3ff")
+        const [start, end, isAnomaly, type, weight] = conn
+        const lineWidth = type === "traffic" ? 0.25 + Math.min(0.35, (weight ?? 1) / 500) : (type === "db" ? 0.6 : type === "hub" ? 0.4 : 0.3)
+        const opacity = type === "traffic" ? 0.08 + Math.min(0.12, (weight ?? 1) / 1000) : (isAnomaly ? 0.15 : type === "core" ? 0.08 : 0.1)
+        const color = isAnomaly ? "#ff0055" : type === "traffic" ? "#00f3ff" : (type === "db" ? "#bc13fe" : "#00f3ff")
 
         return (
           <Line
@@ -322,25 +438,75 @@ function NetworkConnections({ nodes }: { nodes: NetworkNode[] }) {
   )
 }
 
-// --- Data Streams ---
-function DataStreams() {
-  const count = 30
-  const particles = useRef<THREE.InstancedMesh>(null)
+// --- Threat vectors (incident source -> target) ---
+function ThreatVectors({ nodes, threats }: { nodes: NetworkNode[]; threats?: TopologyThreat[] | null }) {
+  const ipPos = ipToPositionMap(nodes)
+  const lines = useMemo(() => {
+    if (!threats?.length) return []
+    const out: { start: THREE.Vector3; end: THREE.Vector3; severity: string; title: string }[] = []
+    for (const t of threats) {
+      const sip = t.source_ip || null
+      const tip = t.target_ip || null
+      if (!sip || !tip) continue
+      const start = ipPos.get(sip)
+      const end = ipPos.get(tip)
+      if (start && end) out.push({ start, end, severity: t.severity, title: t.title })
+    }
+    return out
+  }, [nodes, threats])
 
+  if (lines.length === 0) return null
+
+  return (
+    <group>
+      {lines.map((l, i) => {
+        const isHigh = l.severity?.toLowerCase() === "critical" || l.severity?.toLowerCase() === "high"
+        const color = isHigh ? "#ff0055" : "#ff6600"
+        return (
+          <Line
+            key={i}
+            points={[l.start, l.end]}
+            color={color}
+            lineWidth={0.6}
+            transparent
+            opacity={0.8}
+          />
+        )
+      })}
+    </group>
+  )
+}
+
+// --- Data Streams (sphere particles, color variety) ---
+const STREAM_COLORS = ["#00f3ff", "#39d353", "#bc13fe"]
+function DataStreams() {
+  const count = 40
+  const particles = useRef<THREE.InstancedMesh>(null)
+  const colors = useRef<Float32Array | null>(null)
+  if (!colors.current) colors.current = new Float32Array(count * 3)
   const data = useMemo(() => {
-    return new Array(count).fill(0).map(() => ({
-      pos: new THREE.Vector3((Math.random() - 0.5) * 12, -6, (Math.random() - 0.5) * 12),
-      speed: 0.02 + Math.random() * 0.04
-    }))
+    const arr = new Array(count).fill(0).map((_, i) => {
+      const c = STREAM_COLORS[i % 3]
+      const [r, g, b] = [parseInt(c.slice(1, 3), 16) / 255, parseInt(c.slice(3, 5), 16) / 255, parseInt(c.slice(5, 7), 16) / 255]
+      colors.current!.set([r, g, b], i * 3)
+      return {
+        pos: new THREE.Vector3((Math.random() - 0.5) * 14, -6 - Math.random() * 2, (Math.random() - 0.5) * 14),
+        speed: 0.018 + Math.random() * 0.035
+      }
+    })
+    return arr
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!particles.current || !colors.current) return
+    particles.current.instanceColor = new THREE.InstancedBufferAttribute(colors.current, 3)
   }, [])
 
   useFrame(() => {
     if (!particles.current) return
-
     data.forEach((p, i) => {
       p.pos.y += p.speed
-      if (p.pos.y > 6) p.pos.y = -6
-
+      if (p.pos.y > 6) p.pos.y = -8
       const matrix = new THREE.Matrix4()
       matrix.setPosition(p.pos)
       particles.current!.setMatrixAt(i, matrix)
@@ -350,8 +516,8 @@ function DataStreams() {
 
   return (
     <instancedMesh ref={particles} args={[undefined, undefined, count]}>
-      <boxGeometry args={[0.015, 0.3, 0.015]} />
-      <meshBasicMaterial color="#00f3ff" transparent opacity={0.4} />
+      <sphereGeometry args={[0.04, 8, 8]} />
+      <meshBasicMaterial transparent opacity={0.55} vertexColors toneMapped={false} />
     </instancedMesh>
   )
 }
@@ -359,50 +525,79 @@ function DataStreams() {
 // --- Main Component ---
 export default function VectorSpace() {
   const [selectedNode, setSelectedNode] = useState<NetworkNode | null>(null)
+  const {
+    data: topologyData,
+    isPending: topologyLoading,
+    isError: topologyError,
+  } = useQuery({
+    queryKey: ["topology"],
+    queryFn: () => topologyApi.get({ since_minutes: 60 * 24, edges_limit: 500, threats_limit: 100 }),
+    retry: 2,
+    retryDelay: 1000,
+  })
   const { data: assetsData } = useQuery({
     queryKey: ["assets", "list"],
     queryFn: () => assetsApi.list({ limit: 500 }),
   })
 
   const nodes = useMemo(() => {
+    if (topologyData && Array.isArray(topologyData.nodes) && topologyData.nodes.length > 0) {
+      return topologyNodesToNetworkNodes(topologyData.nodes)
+    }
+    if (topologyError || topologyLoading) return SCOUT_ONLY_NODES
     const items = assetsData?.items
     if (items?.length) return assetsToNodes(items)
-    return generateMockNodes()
-  }, [assetsData?.items])
+    return SCOUT_ONLY_NODES
+  }, [topologyData, topologyLoading, topologyError, assetsData?.items])
   const anomalyCount = useMemo(() => nodes.filter(n => n.isAnomaly).length, [nodes])
+  const threatCount = topologyData?.threats?.length ?? anomalyCount
+  const showingScoutOnly = nodes.length === 1 && nodes[0]?.id === "scout"
+  const dataSource = topologyData?.nodes?.length
+    ? "topology"
+    : assetsData?.items?.length
+      ? "assets"
+      : null
 
   return (
-    <div className="w-full h-full min-h-[500px] relative bg-gradient-to-b from-[#050a14] to-[#0a1525] rounded-xl overflow-hidden border border-white/5">
+    <div
+      className="w-full h-full min-h-[500px] relative bg-gradient-to-b from-[#030810] via-[#050a14] to-[#0a1525] rounded-xl overflow-hidden border border-scout-border/50"
+      data-topology-widget="v2"
+    >
       <Canvas
         camera={{ position: [0, 3, 12], fov: 50 }}
         gl={{ antialias: true }}
         onClick={() => setSelectedNode(null)}
       >
-        <color attach="background" args={["#050a14"]} />
-        <fog attach="fog" args={["#050a14", 8, 25]} />
+        <color attach="background" args={["#030810"]} />
+        <fog attach="fog" args={["#030810", 10, 28]} />
 
-        <ambientLight intensity={0.3} />
-        <pointLight position={[10, 10, 10]} intensity={0.5} color="#00f3ff" />
-        <pointLight position={[-10, -10, -10]} intensity={0.3} color="#bc13fe" />
+        <ambientLight intensity={0.25} />
+        <pointLight position={[10, 10, 10]} intensity={0.6} color="#00f3ff" />
+        <pointLight position={[-10, -10, -10]} intensity={0.35} color="#bc13fe" />
+        <pointLight position={[0, 5, 0]} intensity={0.15} color="#00ffc8" />
 
-        <Stars radius={80} depth={50} count={2000} factor={3} saturation={0} fade speed={0.3} />
+        <Stars radius={100} depth={60} count={3000} factor={4} saturation={0} fade speed={0.4} />
 
         <group>
           <CoreSphere />
-          <NetworkConnections nodes={nodes} />
-          {nodes.map((node) => (
-            <NetworkNode
-              key={node.id}
-              node={node}
-              isSelected={selectedNode?.id === node.id}
-              onClick={() => setSelectedNode(node)}
-            />
-          ))}
+          <NetworkConnections nodes={nodes} edges={topologyData?.edges} />
+          <ThreatVectors nodes={nodes} threats={topologyData?.threats} />
+          {nodes.map((node) =>
+            node.id === "scout" ? null : (
+              <NetworkNode
+                key={node.id}
+                node={node}
+                isSelected={selectedNode?.id === node.id}
+                onClick={() => setSelectedNode(node)}
+              />
+            )
+          )}
           <DataStreams />
         </group>
 
         <EffectComposer>
-          <Bloom luminanceThreshold={1} mipmapBlur={false} intensity={0.3} radius={0.2} />
+          <Bloom luminanceThreshold={0.85} luminanceSmoothing={0.4} mipmapBlur intensity={0.45} radius={0.25} />
+          <Vignette offset={0.35} darkness={0.4} blendFunction={BlendFunction.NORMAL} />
         </EffectComposer>
 
         <OrbitControls
@@ -418,13 +613,31 @@ export default function VectorSpace() {
       <div className="absolute top-4 left-4 pointer-events-none">
         <h3 className="text-lg font-bold text-scout-neon tracking-wider drop-shadow-lg">NETWORK TOPOLOGY</h3>
         <p className="text-[11px] text-scout-neon/60 font-mono">SUBNET-BASED VISUALIZATION</p>
+        {topologyError && (
+          <p className="text-xs text-amber-400 font-mono mt-1 bg-black/40 px-2 py-1 rounded">
+            Topoloji API bağlanamadı — Backend çalışıyor mu? (http://localhost:8000 veya NEXT_PUBLIC_API_URL)
+          </p>
+        )}
+        {showingScoutOnly && !topologyError && !topologyLoading && (
+          <p className="text-xs text-scout-neon/80 font-mono mt-1 bg-black/40 px-2 py-1 rounded">
+            Cihaz yok — Hunter ile subnet tara veya POST /discovery/scan ile keşfet
+          </p>
+        )}
       </div>
 
       {/* Stats */}
-      <div className="absolute top-4 right-4 text-right font-mono text-xs space-y-1">
-        <div className="text-scout-neon/70">TOTAL NODES: <span className="text-scout-neon">{nodes.length}</span></div>
-        <div className="text-green-400/70">ONLINE: <span className="text-green-400">{nodes.length - anomalyCount}</span></div>
-        <div className="text-red-400/70">THREATS: <span className="text-red-400 font-bold">{anomalyCount}</span></div>
+      <div className="absolute top-4 right-4 text-right font-mono text-xs space-y-1 bg-black/50 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2">
+        <div className="text-[10px] font-bold text-scout-neon/90 uppercase tracking-wider border-b border-scout-neon/30 pb-1 mb-1">
+          İstatistik
+        </div>
+        {dataSource && (
+          <div className="text-[10px] text-emerald-400 font-medium mb-0.5">
+            {dataSource === "topology" ? "Veri: Topoloji API" : "Veri: Assets API"}
+          </div>
+        )}
+        <div className="text-scout-neon/70">Toplam düğüm: <span className="text-scout-neon font-semibold">{nodes.length}</span></div>
+        <div className="text-green-400/70">Çevrimiçi: <span className="text-green-400 font-semibold">{nodes.length - anomalyCount}</span></div>
+        <div className="text-red-400/70">Tehdit: <span className="text-red-400 font-bold">{threatCount}</span></div>
       </div>
 
       {/* Selected Node Panel */}
@@ -491,17 +704,28 @@ export default function VectorSpace() {
       )}
 
       {/* Legend */}
-      <div className="absolute bottom-4 right-4 pointer-events-none space-y-1">
+      <div className="absolute bottom-4 right-4 pointer-events-none bg-black/50 backdrop-blur-sm border border-white/10 rounded-lg px-3 py-2 space-y-2">
+        <div className="text-[10px] font-bold text-scout-neon/90 uppercase tracking-wider border-b border-scout-neon/30 pb-1 mb-0.5">
+          Lejant
+        </div>
         <div className="flex items-center gap-2 justify-end">
-          <span className="text-[10px] text-scout-neon/60 font-mono">HEALTHY</span>
+          <span className="text-[10px] text-scout-neon/80 font-mono">Bağlantı (trafik)</span>
+          <div className="w-4 h-0.5 rounded bg-scout-neon/80" />
+        </div>
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-[10px] text-red-400/80 font-mono">Tehdit vektörü</span>
+          <div className="w-4 h-0.5 rounded bg-red-500" />
+        </div>
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-[10px] text-scout-neon/80 font-mono">Sağlıklı</span>
           <div className="w-2 h-2 rounded-full bg-scout-neon" />
         </div>
         <div className="flex items-center gap-2 justify-end">
-          <span className="text-[10px] text-yellow-400/60 font-mono">WARNING</span>
+          <span className="text-[10px] text-yellow-400/80 font-mono">Uyarı</span>
           <div className="w-2 h-2 rounded-full bg-yellow-400" />
         </div>
         <div className="flex items-center gap-2 justify-end">
-          <span className="text-[10px] text-red-400/60 font-mono">THREAT</span>
+          <span className="text-[10px] text-red-400/80 font-mono">Tehdit</span>
           <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
         </div>
       </div>

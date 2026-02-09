@@ -42,7 +42,7 @@ class NetdiscoverTool(BaseTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
             out = (stdout or b"").decode()
             err = (stderr or b"").decode()
             if proc.returncode != 0 and err:
@@ -67,7 +67,7 @@ class NetdiscoverTool(BaseTool):
             return ToolResult(success=False, error="netdiscover not installed or not in PATH")
         except asyncio.TimeoutError:
             logger.error("Netdiscover timeout")
-            return ToolResult(success=False, error="netdiscover timeout (60s)")
+            return ToolResult(success=False, error="netdiscover timeout (120s)")
         except Exception as e:
             logger.error("Netdiscover failed: %s", e)
             return ToolResult(success=False, error=str(e))

@@ -50,3 +50,18 @@ async def list_traffic(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/aggregates")
+async def get_aggregates(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    since_minutes: int = Query(60 * 24, ge=1, le=60 * 24 * 7),
+    interval_minutes: int = Query(15, ge=1, le=60 * 24),
+):
+    """Time-series and heatmap (IP x time) aggregates for traffic charts."""
+    repo = TrafficRepository(db)
+    return await repo.get_aggregates(
+        since_minutes=since_minutes,
+        interval_minutes=interval_minutes,
+    )

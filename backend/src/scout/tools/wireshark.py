@@ -58,13 +58,19 @@ class TsharkTool(BaseTool):
                 
             output_data = stdout.decode()
             try:
-                # Tshark outputs an array of packet objects
-                packets = json.loads(output_data)
+                raw = json.loads(output_data)
+                # Tshark -T json: array of packets, or single packet object
+                if isinstance(raw, list):
+                    packets = raw
+                elif isinstance(raw, dict) and "packets" in raw:
+                    packets = raw["packets"] if isinstance(raw["packets"], list) else [raw["packets"]]
+                else:
+                    packets = [raw] if raw else []
                 logger.info(f"Captured {len(packets)} packets")
                 return ToolResult(success=True, data={"packets": packets})
             except json.JSONDecodeError:
                 logger.warning("Could not decode Tshark JSON output")
-                return ToolResult(success=True, raw_output=output_data)
+                return ToolResult(success=True, data={"packets": []}, raw_output=output_data)
 
         except Exception as e:
             logger.error(f"Tshark execution error: {str(e)}")

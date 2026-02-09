@@ -37,6 +37,12 @@
     --input: 215 18% 18%;
     --ring: 165 100% 50%;
 
+    /* SOC / workbench: panel border, terminal, grid */
+    --panel-border: 215 18% 14%;
+    --terminal-bg: 220 25% 5%;
+    --terminal-border: 215 18% 14%;
+    --grid-dot: 215 15% 22%;
+
     --radius: 0.375rem;
   }
 }
@@ -55,5 +61,14 @@
 .bg-dot-pattern {
   background-image: radial-gradient(circle at 1px 1px, hsl(var(--border)) 1px, transparent 0);
   background-size: 24px 24px;
+  background-position: 0 0;
+}
+
+/* SOC: tighter 8px grid for operasyon merkezi hissi */
+.bg-grid-soc {
+  background-image:
+    linear-gradient(hsl(var(--grid-dot) / 0.4) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--grid-dot) / 0.4) 1px, transparent 1px);
+  background-size: 8px 8px;
   background-position: 0 0;
 }

@@ -808,10 +808,29 @@ class PacketLog(Base):
     
     interface: Mapped[str] = mapped_column(String(50))
     direction: Mapped[str] = mapped_column(String(20), default="unknown")
-    
+    capture_source: Mapped[Optional[str]] = mapped_column(String(20))  # tshark | scapy
+    user_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     # Indexes for faster component searching
     __table_args__ = (
         Index("idx_packet_logs_src", "source_ip"),
         Index("idx_packet_logs_dst", "destination_ip"),
         Index("idx_packet_logs_proto", "protocol"),
     )
+
+
+# ============================================
+# 21. FLOW_LOG MODEL (NetFlow/sFlow style aggregates)
+# ============================================
+class FlowLog(Base):
+    __tablename__ = "flow_logs"
+
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    source_ip: Mapped[str] = mapped_column(INET, nullable=False)
+    dest_ip: Mapped[str] = mapped_column(INET, nullable=False)
+    ports: Mapped[Optional[str]] = mapped_column(String(200))  # e.g. "80,443"
+    bytes_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    packets: Mapped[int] = mapped_column(Integer, default=0)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    capture_source: Mapped[Optional[str]] = mapped_column(String(20))

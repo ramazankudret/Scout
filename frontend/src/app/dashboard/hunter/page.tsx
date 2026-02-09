@@ -1,15 +1,19 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Target, Search, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
+import { HunterHeader } from "./HunterHeader"
+import { HunterScanForm } from "./HunterScanForm"
+import { HunterExecution } from "./HunterExecution"
+import { HunterResults } from "./HunterResults"
+import { HunterActionCards } from "./HunterActionCards"
+import { HunterHeatmap } from "./HunterHeatmap"
 import { modulesApi } from "@/services/modules"
 import { getBaseUrl } from "@/services/api"
 
 export default function HunterPage() {
     const [target, setTarget] = useState("127.0.0.1")
+    const [detailed, setDetailed] = useState(false)
     const [scanning, setScanning] = useState(false)
     const [results, setResults] = useState<any>(null)
     const [error, setError] = useState<string | null>(null)
@@ -27,21 +31,36 @@ export default function HunterPage() {
         check()
     }, [])
 
-    const handleScan = async () => {
+    const handleScan = async (opts?: { scan_discovered?: boolean }) => {
         try {
             setScanning(true)
             setResults(null)
             setError(null)
-            const result = await modulesApi.execute("hunter", "active", { target })
+            const payload: Record<string, unknown> = { target }
+            if (opts?.scan_discovered) payload.scan_discovered = true
+            if (detailed) payload.detailed = true
+            const result = await modulesApi.execute("hunter", "active", payload)
             if (result?.data?.error) {
                 setError(result.data.error)
                 setResults(null)
             } else {
-                setResults(result?.data ?? null)
+                const data = result?.data ?? null
+                setResults(data)
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Scan failed"
-            setError(msg)
+            const isTimeout = msg.includes("zaman aşımı") || msg.includes("5 dk")
+            const isConnectionLost = msg.includes("Backend'e bağlanılamadı") || msg.includes("Failed to fetch") || msg.includes("yanıt alamadı")
+            const isSubnet = target.includes("/")
+            let finalMsg = msg
+            if (backendOk === true && (isTimeout || isConnectionLost)) {
+                if (isSubnet) {
+                    finalMsg = "Subnet taraması başarısız: Docker içindeki backend yerel ağa (192.168.x) erişemiyor. Çözüm: Proje kökünde PowerShell'de tek komut çalıştırın: .\\scripts\\backend-scan-mode.ps1 — ardından taramayı tekrar deneyin."
+                } else {
+                    finalMsg = "Tarama isteği yanıt alamadı. Backend loglarına bakın; Nmap kurulu mu? Subnet tarıyorsanız docker-compose.scan.yml kullanın."
+                }
+            }
+            setError(finalMsg)
             setResults(null)
             console.error("Scan failed:", err)
         } finally {
@@ -49,41 +68,44 @@ export default function HunterPage() {
         }
     }
 
+    const handleScanDiscovered = () => {
+        handleScan({ scan_discovered: true })
+    }
+
+    const handleQuickPortScan = () => {
+        setTarget((t) => t || "127.0.0.1")
+        if (target.includes("/")) handleScan({ scan_discovered: true })
+        else handleScan()
+    }
+
+    const handleVulnerabilityCheck = () => {
+        window.location.href = "/dashboard/assets"
+    }
+
+    const handleComplianceAudit = () => {
+        // Placeholder per plan A4
+        alert("Compliance Audit — yakında eklenecek.")
+    }
+
+    const hasExecution = results && !results.error && (results.steps?.length || results.command)
+    const hasResults = results && !results.error
+
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-white mb-2 flex items-center gap-2">
-                        <Target className="w-8 h-8 text-red-500" />
-                        Hunter Mode
-                    </h1>
-                    <p className="text-muted-foreground">Proactive Vulnerability Scanning & Pentesting</p>
-                    {backendOk === false && (
-                        <p className="text-amber-500 text-sm mt-1">Backend bağlı değil. Backend&apos;i başlatın (port 8000).</p>
-                    )}
-                    {backendOk === true && (
-                        <p className="text-green-600 text-sm mt-1">Backend bağlı</p>
-                    )}
-                </div>
-                <div className="flex gap-2 items-center">
-                    <Input
-                        value={target}
-                        onChange={(e: any) => setTarget(e.target.value)}
-                        placeholder="Target IP (e.g., 192.168.1.5)"
-                        className="bg-black/50 border-white/10 w-64"
-                    />
-                    <Button
-                        onClick={handleScan}
-                        disabled={scanning}
-                        className="bg-red-600 hover:bg-red-700 text-white gap-2 min-w-[120px]"
-                    >
-                        {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                        {scanning ? "Scanning..." : "Start Scan"}
-                    </Button>
-                </div>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+                <HunterHeader backendOk={backendOk} target={target} />
+                <HunterScanForm
+                    target={target}
+                    onTargetChange={setTarget}
+                    detailed={detailed}
+                    onDetailedChange={setDetailed}
+                    onScan={() => handleScan()}
+                    scanning={scanning}
+                    scanDiscoveredDisabled={!target.includes("/")}
+                    onScanDiscovered={target.includes("/") ? handleScanDiscovered : undefined}
+                />
             </div>
 
-            {/* Error */}
             {error && (
                 <Card className="border-destructive/50 bg-destructive/10">
                     <CardContent className="pt-6">
@@ -92,70 +114,33 @@ export default function HunterPage() {
                 </Card>
             )}
 
-            {/* Results Section */}
-            {results && !results.error && (
-                <Card className="border-red-500/20 bg-black/40">
-                    <CardHeader>
-                        <CardTitle>Scan Results: {results.target ?? target}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <div>
-                                <h3 className="font-bold mb-2">Open Ports</h3>
-                                <ul className="space-y-1">
-                                    {results.open_ports?.map((port: any) => (
-                                        <li key={port} className="text-sm bg-red-500/10 text-red-400 px-2 py-1 rounded inline-block mr-2">
-                                            Port {port}
-                                        </li>
-                                    ))}
-                                    {(!results.open_ports || results.open_ports.length === 0) && <li className="text-muted-foreground">No open ports found</li>}
-                                </ul>
-                            </div>
-                            <div>
-                                <h3 className="font-bold mb-2">Services</h3>
-                                <ul className="space-y-1">
-                                    {results.services?.map((svc: string, i: number) => (
-                                        <li key={i} className="text-sm text-gray-300">• {svc}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+            {hasExecution && (
+                <HunterExecution
+                    steps={results.steps}
+                    command={results.command}
+                    process_output={results.process_output}
+                />
             )}
 
-            <div className="grid gap-6 md:grid-cols-3">
-                {/* Action Cards */}
-                <Card className="bg-gradient-to-br from-red-950/30 to-black border-red-500/20 hover:border-red-500/50 transition-colors cursor-pointer group">
-                    <CardContent className="p-6 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
-                            <Target className="w-8 h-8 text-red-500" />
-                        </div>
-                        <h3 className="font-bold text-white text-lg">Quick Port Scan</h3>
-                        <p className="text-sm text-muted-foreground">Scan top 1000 ports on local network</p>
-                    </CardContent>
-                </Card>
+            {hasResults && (
+                <HunterResults
+                    target={results.target}
+                    open_ports={results.open_ports}
+                    services={results.services}
+                    scan_results={results.scan_results}
+                    discovered_hosts={results.discovered_hosts}
+                />
+            )}
 
-                <Card className="bg-gradient-to-br from-orange-950/30 to-black border-orange-500/20 hover:border-orange-500/50 transition-colors cursor-pointer group">
-                    <CardContent className="p-6 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center group-hover:bg-orange-500/20 transition-colors">
-                            <AlertCircle className="w-8 h-8 text-orange-500" />
-                        </div>
-                        <h3 className="font-bold text-white text-lg">Vulnerability Check</h3>
-                        <p className="text-sm text-muted-foreground">Check for known CVEs on discovered assets</p>
-                    </CardContent>
-                </Card>
+            {hasResults && (
+                <HunterHeatmap results={results} />
+            )}
 
-                <Card className="bg-gradient-to-br from-green-950/30 to-black border-green-500/20 hover:border-green-500/50 transition-colors cursor-pointer group">
-                    <CardContent className="p-6 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center group-hover:bg-green-500/20 transition-colors">
-                            <CheckCircle className="w-8 h-8 text-green-500" />
-                        </div>
-                        <h3 className="font-bold text-white text-lg">Compliance Audit</h3>
-                        <p className="text-sm text-muted-foreground">Verify security config against best practices</p>
-                    </CardContent>
-                </Card>
-            </div>
+            <HunterActionCards
+                onQuickPortScan={handleQuickPortScan}
+                onVulnerabilityCheck={handleVulnerabilityCheck}
+                onComplianceAudit={handleComplianceAudit}
+            />
         </div>
     )
 }

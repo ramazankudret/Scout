@@ -1,0 +1,20 @@
+# Backend'i host ağında çalıştırır (yerel ağ taraması 192.168.x için).
+# Önce: docker compose -f docker/docker-compose.yml up -d db redis
+# Sonra (mevcut backend'i durdurun): docker compose -f docker/docker-compose.yml stop backend
+# Çalıştır: docker compose -f docker/docker-compose.scan.yml up -d backend
+# Normale dönmek için: docker compose -f docker/docker-compose.scan.yml stop backend && docker compose -f docker/docker-compose.yml up -d backend
+
+name: scout
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.backend
+    volumes:
+      - ../backend:/app
+    network_mode: host
+    environment:
+      DATABASE_URL: postgresql+asyncpg://scout:secure_password@127.0.0.1:5432/scout_db
+      REDIS_URL: redis://127.0.0.1:6379/0
+    command: sh -c "python -m scout.scripts.create_tables || true; exec uvicorn scout.main:app --host 0.0.0.0 --port 8000 --reload"

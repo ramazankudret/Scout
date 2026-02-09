@@ -1,11 +1,34 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Activity, RefreshCw, Loader2, Ghost } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
+import { Activity, RefreshCw, Loader2, Ghost, BarChart3, Grid3X3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { trafficApi, TrafficItem } from "@/lib/api/client"
+import { trafficApi, TrafficItem, TrafficAggregates } from "@/lib/api/client"
+import {
+    AreaChart,
+    Area,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+} from "recharts"
+import { HexHeatmap } from "@/components/dashboard/HexHeatmap"
+
+const SINCE_OPTIONS = [60, 60 * 6, 60 * 24] as const
+const INTERVAL_OPTIONS = [5, 15, 60] as const
+
+function formatUtcToLocal(iso: string | null | undefined): string {
+    if (!iso || typeof iso !== "string") return ""
+    const utcString = /Z$|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : iso + "Z"
+    try {
+        return new Date(utcString).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+    } catch {
+        return iso
+    }
+}
 
 export default function TrafficPage() {
     const [items, setItems] = useState<TrafficItem[]>([])
@@ -15,10 +38,18 @@ export default function TrafficPage() {
     const [filterDst, setFilterDst] = useState("")
     const [limit] = useState(100)
     const [offset, setOffset] = useState(0)
+    const [aggregates, setAggregates] = useState<TrafficAggregates | null>(null)
+    const [aggregatesLoading, setAggregatesLoading] = useState(false)
+    const [sinceMinutes, setSinceMinutes] = useState(60 * 24)
+    const [intervalMinutes, setIntervalMinutes] = useState(15)
 
     useEffect(() => {
         loadTraffic()
     }, [offset, filterSrc, filterDst])
+
+    useEffect(() => {
+        loadAggregates()
+    }, [sinceMinutes, intervalMinutes])
 
     const loadTraffic = async () => {
         try {
@@ -39,6 +70,22 @@ export default function TrafficPage() {
         }
     }
 
+    const loadAggregates = async () => {
+        try {
+            setAggregatesLoading(true)
+            const data = await trafficApi.getAggregates({
+                since_minutes: sinceMinutes,
+                interval_minutes: intervalMinutes,
+            })
+            setAggregates(data)
+        } catch (err) {
+            console.error("Failed to load aggregates:", err)
+            setAggregates(null)
+        } finally {
+            setAggregatesLoading(false)
+        }
+    }
+
     const formatDate = (iso: string | null) => {
         if (!iso) return "-"
         try {
@@ -48,6 +95,26 @@ export default function TrafficPage() {
         }
     }
 
+    const chartData = useMemo(() => {
+        if (!aggregates?.time_series?.length) return []
+        return aggregates.time_series.map((b) => ({
+            time: formatUtcToLocal(b.bucket_start),
+            packet_count: b.packet_count,
+            byte_count: b.byte_count,
+        }))
+    }, [aggregates])
+
+    const heatmapGrid = useMemo(() => {
+        if (!aggregates?.heatmap_data?.length) return { ips: [] as string[], buckets: [] as string[], cells: new Map<string, number>() }
+        const ips = Array.from(new Set(aggregates.heatmap_data.map((d) => d.ip).filter(Boolean))).sort()
+        const buckets = Array.from(new Set(aggregates.heatmap_data.map((d) => d.bucket_start ?? "").filter(Boolean))).sort()
+        const cells = new Map<string, number>()
+        for (const d of aggregates.heatmap_data) {
+            if (d.bucket_start && d.ip) cells.set(`${d.bucket_start}\t${d.ip}`, d.packet_count)
+        }
+        return { ips, buckets, cells }
+    }, [aggregates])
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -56,13 +123,95 @@ export default function TrafficPage() {
                         <Ghost className="w-8 h-8 text-purple-500" />
                         Trafik / Paket logları
                     </h1>
-                    <p className="text-muted-foreground">Stealth (tshark) yakalama kayıtları</p>
+                    <p className="text-muted-foreground">Stealth (tshark/scapy) yakalama kayıtları</p>
                 </div>
                 <Button variant="outline" onClick={loadTraffic} disabled={loading} className="gap-2">
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                     Yenile
                 </Button>
             </div>
+
+            {/* Time series */}
+            <Card className="border-white/10 bg-black/40">
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-white flex items-center gap-2 text-lg">
+                        <BarChart3 className="w-5 h-5" />
+                        Zaman serisi (paket / byte)
+                    </CardTitle>
+                    <div className="flex flex-wrap gap-4 items-center text-sm">
+                        <span className="text-muted-foreground">Son</span>
+                        {SINCE_OPTIONS.map((m) => (
+                            <Button
+                                key={m}
+                                variant={sinceMinutes === m ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setSinceMinutes(m)}
+                            >
+                                {m === 60 ? "1h" : m === 360 ? "6h" : "24h"}
+                            </Button>
+                        ))}
+                        <span className="text-muted-foreground ml-2">Aralık (dk)</span>
+                        {INTERVAL_OPTIONS.map((m) => (
+                            <Button
+                                key={m}
+                                variant={intervalMinutes === m ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setIntervalMinutes(m)}
+                            >
+                                {m}
+                            </Button>
+                        ))}
+                        <Button variant="ghost" size="sm" onClick={loadAggregates} disabled={aggregatesLoading}>
+                            {aggregatesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent>
+                    {aggregatesLoading ? (
+                        <div className="h-64 flex items-center justify-center text-muted-foreground">
+                            <Loader2 className="w-8 h-8 animate-spin" />
+                        </div>
+                    ) : chartData.length === 0 ? (
+                        <p className="text-muted-foreground py-8 text-center">Veri yok. Önce Stealth ile yakalama yapın.</p>
+                    ) : (
+                        <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                                    <CartesianGrid strokeDasharray="3 3" className="stroke-white/10" />
+                                    <XAxis dataKey="time" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                    <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                                    <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }} />
+                                    <Area type="monotone" dataKey="packet_count" stroke="hsl(263 70% 50%)" fill="hsl(263 70% 50% / 0.3)" name="Paket" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Heatmap IP × zaman (hex, referans görsel spec: gri→kırmızı→turuncu→sarı) */}
+            {heatmapGrid.ips.length > 0 && heatmapGrid.buckets.length > 0 && (
+                <Card className="border-white/10 bg-black/40">
+                    <CardHeader>
+                        <CardTitle className="text-white flex items-center gap-2 text-lg">
+                            <Grid3X3 className="w-5 h-5" />
+                            Heatmap (IP × zaman)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="max-h-64 overflow-auto">
+                            <HexHeatmap
+                                rows={heatmapGrid.ips.slice(0, 20)}
+                                columns={heatmapGrid.buckets.slice(0, 24)}
+                                getValue={(ip, bucket) => heatmapGrid.cells.get(`${bucket}\t${ip}`) ?? 0}
+                                hexRadius={8}
+                                showRowLabels
+                                showColumnLabels
+                            />
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             <Card className="border-white/10 bg-black/40">
                 <CardHeader className="pb-4">

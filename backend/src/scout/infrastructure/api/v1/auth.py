@@ -107,21 +107,6 @@ async def require_superuser(current_user: Annotated[User, Depends(get_current_us
 
 def _is_db_connection_error(exc: BaseException) -> bool:
     """True if the exception is due to DB being unreachable (e.g. PostgreSQL not running)."""
-    # #region agent log
-    _log_path = r"c:\Users\erama\OneDrive\Desktop\Scout\.cursor\debug.log"
-    try:
-        _err = str(exc).lower()
-        _res = (
-            isinstance(exc, ConnectionRefusedError)
-            or (isinstance(exc, OSError) and getattr(exc, "winerror", None) == 1225)
-            or "1225" in _err or "connection refused" in _err or "could not connect" in _err
-        )
-        open(_log_path, "a", encoding="utf-8").write(
-            json.dumps({"location": "auth.py:_is_db_connection_error", "message": "check", "data": {"exc_type": type(exc).__name__, "exc_msg": str(exc)[:500], "result": _res, "hypothesisId": "H2"}}) + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
     if isinstance(exc, ConnectionRefusedError):
         return True
     if isinstance(exc, OSError) and getattr(exc, "winerror", None) == 1225:
@@ -157,7 +142,10 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="database_unavailable",
             ) from e
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        ) from e
 
 
 @router.post("/token", response_model=Token)
@@ -166,27 +154,10 @@ async def login_for_access_token(
     db: AsyncSession = Depends(get_db)
 ):
     """Get access token (Login)"""
-    # #region agent log
-    _log_path = r"c:\Users\erama\OneDrive\Desktop\Scout\.cursor\debug.log"
-    try:
-        open(_log_path, "a", encoding="utf-8").write(
-            json.dumps({"location": "auth.py:login_for_access_token", "message": "entry", "data": {"username": getattr(form_data, "username", None), "hypothesisId": "H1,H3,H4,H5"}}) + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
     try:
         repo = UserRepository(db)
         user = await repo.get_by_username(form_data.username)
     except Exception as e:
-        # #region agent log
-        try:
-            open(_log_path, "a", encoding="utf-8").write(
-                json.dumps({"location": "auth.py:login_for_access_token", "message": "exception_caught", "data": {"exc_type": type(e).__name__, "exc_msg": str(e)[:500], "is_conn_err": _is_db_connection_error(e), "hypothesisId": "H1,H2,H4"}}) + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         if _is_db_connection_error(e):
             last_err = e
             for attempt in range(2):
@@ -195,10 +166,6 @@ async def login_for_access_token(
                     async with get_db_context() as retry_session:
                         retry_repo = UserRepository(retry_session)
                         user = await retry_repo.get_by_username(form_data.username)
-                    try:
-                        open(_log_path, "a", encoding="utf-8").write(json.dumps({"location": "auth.py:login_for_access_token", "message": "retry_succeeded", "data": {"attempt": attempt + 1, "runId": "post-fix"}}) + "\n")
-                    except Exception:
-                        pass
                     break
                 except Exception as retry_e:
                     last_err = retry_e

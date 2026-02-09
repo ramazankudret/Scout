@@ -7,7 +7,7 @@ export interface ModuleResult {
     execution_time_ms: number;
 }
 
-const SCAN_TIMEOUT_MS = 120000; // 2 dakika (nmap taraması uzun sürebilir)
+const SCAN_TIMEOUT_MS = 300000; // 5 dakika (subnet keşfi /24 için gerekebilir)
 
 export const modulesApi = {
     execute: async (moduleName: string, mode: 'passive' | 'active' = 'active', config: any = {}): Promise<ModuleResult> => {

@@ -77,6 +77,9 @@ async def execute_module(
 
     The module will run with the specified mode and configuration.
     """
+    import logging
+    log = logging.getLogger(__name__)
+    log.info("execute_module_started module=%s", module_name)
     try:
         from uuid import UUID
         from scout.infrastructure.repositories import AssetRepository, ScanResultRepository, TrafficRepository
@@ -100,6 +103,7 @@ async def execute_module(
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Module '{module_name}' not found")
     except Exception as e:
+        log.exception("execute_module_failed")
         return ExecuteModuleResponse(
             module_name=module_name,
             result=ModuleResult(

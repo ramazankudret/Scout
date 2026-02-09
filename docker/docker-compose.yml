@@ -1,4 +1,4 @@
-version: '3.8'
+name: scout
 
 services:
   db:
@@ -35,7 +35,7 @@ services:
     volumes:
       - ../backend:/app
     environment:
-      DATABASE_URL: postgresql://scout:secure_password@db:5432/scout_db
+      DATABASE_URL: postgresql+asyncpg://scout:secure_password@db:5432/scout_db
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
@@ -46,7 +46,8 @@ services:
         condition: service_started
     networks:
       - scout_net
-    command: uvicorn src.scout.main:app --host 0.0.0.0 --port 8000 --reload
+    # create_tables başarısız olsa bile uvicorn başlat (8000 dinlensin); DB hatası sonra API'de görünür
+    command: sh -c "python -m scout.scripts.create_tables || true; exec uvicorn scout.main:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend:
     build:
@@ -58,7 +59,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
     depends_on:
       - backend
     networks:

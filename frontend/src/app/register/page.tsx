@@ -57,7 +57,19 @@ export default function RegisterPage() {
 
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}))
-                setError(Array.isArray(data.detail) ? data.detail.map((x: { msg: string }) => x.msg).join(", ") : (data.detail || "Kayıt başarısız."))
+                const detail = data.detail ?? data.message
+                const details = data.details
+                let msg: string
+                if (Array.isArray(detail)) {
+                    msg = detail.map((x: { msg?: string }) => x.msg || JSON.stringify(x)).join(", ")
+                } else if (details && Array.isArray(details) && details.length > 0) {
+                    msg = details.map((x: { msg?: string }) => x.msg || JSON.stringify(x)).join(", ")
+                } else if (typeof detail === "string") {
+                    msg = detail
+                } else {
+                    msg = "Kayıt başarısız."
+                }
+                setError(msg)
                 return
             }
 

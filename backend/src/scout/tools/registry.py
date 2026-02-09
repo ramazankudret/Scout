@@ -4,6 +4,7 @@ from .nmap import NmapTool
 from .wireshark import TsharkTool
 from .masscan import MasscanTool
 from .netdiscover import NetdiscoverTool
+from .scapy_sniffer import ScapySnifferTool
 
 
 class ToolRegistry:
@@ -16,6 +17,7 @@ class ToolRegistry:
         self.register(TsharkTool())
         self.register(MasscanTool())
         self.register(NetdiscoverTool())
+        self.register(ScapySnifferTool())
     
     def register(self, tool: BaseTool):
         self._tools[tool.name] = tool

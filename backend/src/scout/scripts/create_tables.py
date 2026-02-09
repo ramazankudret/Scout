@@ -72,6 +72,35 @@ async def migrate_learned_lessons_columns(conn):
         logger.debug("vector_embedding: %s", e)
 
 
+DEMO_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+async def ensure_demo_user():
+    """
+    Demo/system kullanıcısı oluşturur (Hunter vb. giriş yapılmadan çalışınca FK için).
+    ORM kullanıyoruz; böylece User modelindeki tüm varsayılanlar uygulanır, NOT NULL hataları olmaz.
+    """
+    from uuid import UUID
+    from scout.core.security import get_password_hash
+    from scout.infrastructure.database.session import async_session_factory
+    from scout.infrastructure.database.models import User
+
+    async with async_session_factory() as session:
+        existing = await session.get(User, UUID(DEMO_USER_ID))
+        if existing is not None:
+            logger.info("Demo user already exists (id=%s)", DEMO_USER_ID)
+            return
+        user = User(
+            id=UUID(DEMO_USER_ID),
+            email="demo@scout.local",
+            username="demo",
+            hashed_password=get_password_hash("demo"),
+        )
+        session.add(user)
+        await session.commit()
+        logger.info("Demo user created (id=%s)", DEMO_USER_ID)
+
+
 async def create_tables():
     """Create database tables."""
     try:
@@ -84,7 +113,23 @@ async def create_tables():
             
             logger.info("Migrating learned_lessons columns if needed...")
             await migrate_learned_lessons_columns(conn)
-            
+
+            # Optional columns on packet_logs (add if table was created with older schema)
+            for col, defn in [
+                ("capture_source", "VARCHAR(20)"),
+                ("user_id", "UUID REFERENCES users(id) ON DELETE SET NULL"),
+            ]:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE packet_logs ADD COLUMN IF NOT EXISTS {col} {defn}")
+                    )
+                    logger.info("packet_logs: ensured column %s", col)
+                except Exception as e:
+                    logger.warning("packet_logs column %s: %s", col, e)
+
+        logger.info("Ensuring demo user...")
+        await ensure_demo_user()
+
         logger.info("Database initialized successfully.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
