@@ -1,162 +1,110 @@
-# Scout - AI Cyber Security Agent
+Scout - AI Cyber Security Agent
+🛡️ Scout is an autonomous cybersecurity agent designed to monitor network traffic, detect advanced threats, and take automated defensive actions using state-of-the-art AI.
 
-🛡️ **Scout** - Otonom siber güvenlik ajanı. Ağınızı izler, tehditleri tespit eder ve otomatik aksiyon alır.
+🚀 Quick Start
+Prerequisites
+Docker & Docker Compose
 
-## 🚀 Hızlı Başlangıç
+Python 3.11+ (for development)
 
-### Gereksinimler
-- Docker & Docker Compose
-- Python 3.11+ (geliştirme için)
-- Node.js 20+ (frontend için)
+Node.js 20+ (for frontend dashboard)
 
-### Docker ile Çalıştırma (Önerilen)
-```bash
-# Tüm servisleri başlat
+Run with Docker (Recommended)
+Bash
+# Start all services
 docker-compose -f docker/docker-compose.yml up -d
 
-# Logları izle
+# Follow logs
 docker-compose -f docker/docker-compose.yml logs -f
 
-# Durdur
+# Stop services
 docker-compose -f docker/docker-compose.yml down
-```
+🧠 LLM Orchestration
+Scout features a hybrid LLM architecture, allowing users to choose between local privacy and high-performance cloud reasoning.
 
-### Ollama Kurulumu (Local LLM)
+Local LLM (via Ollama)
+Scout uses Ollama for local AI analysis, ensuring data privacy with zero API costs.
 
-Scout, yerel yapay zeka analizi için Ollama kullanır. API masrafı olmadan, gizliliğinizi koruyarak çalışır.
+Install Ollama: Download here
 
-```bash
-# 1. Ollama'yı indir ve kur
-# Windows: https://ollama.com/download/windows
-# Linux: curl -fsSL https://ollama.com/install.sh | sh
-# macOS: brew install ollama
+Start Service: ollama serve
 
-# 2. Ollama servisini başlat
-ollama serve
+Pull Recommended Model:
 
-# 3. Model indir (önerilen: llama3.1:8b - RTX 4060 8GB için ideal)
+Bash
+# Optimized for mid-range GPUs (like RTX 4060 8GB)
 ollama pull llama3.1:8b
 
-# Alternatif modeller:
-# ollama pull deepseek-r1:8b    # Reasoning odaklı
-# ollama pull mistral:7b         # Hızlı ve hafif
-# ollama pull codellama:7b       # Kod analizi için
-```
+# Alternatives:
+# ollama pull deepseek-r1:8b    (Reasoning-focused)
+# ollama pull codellama:7b      (Security code analysis)
+☁️ Cloud LLM Support (Experimental)
+We are currently integrating Claude 3.5 Sonnet (via Anthropic API) for complex network forensic analysis.
 
-**Model Seçimi (.env dosyasında):**
-```bash
-LLM_PROVIDER=ollama
+Claude Integration: Utilizing MCP (Model Context Protocol) to provide Claude with direct context from network logs.
+
+Enterprise Reasoning: Leveraging Claude's 200k+ context window for deep-dive incident response.
+
+Configuration (.env):
+
+Bash
+LLM_PROVIDER=ollama # or 'anthropic'
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.1:8b
-```
-
-### Local Geliştirme
-
-#### Backend
-```bash
+ANTHROPIC_API_KEY=your_key_here
+🛠️ Local Development
+Backend (FastAPI)
+Bash
 cd backend
-
-# Poetry kurulumu (ilk seferinde)
 pip install poetry
-
-# Bağımlılıkları yükle
 poetry install
-
-# .env dosyasını oluştur
 cp .env.example .env
-
-# Sunucuyu başlat
 poetry run uvicorn src.scout.main:app --reload
-```
+API Documentation: http://localhost:8000/docs
 
-API dokümantasyonu: http://localhost:8000/docs
-
-#### LLM Test Endpoint'leri
-```bash
-# LLM sağlık kontrolü
-curl http://localhost:8000/api/v1/llm/health
-
-# Basit sohbet
-curl -X POST http://localhost:8000/api/v1/llm/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What are the signs of a brute force attack?"}'
-
-# Log analizi
-curl -X POST http://localhost:8000/api/v1/llm/analyze/logs \
-  -H "Content-Type: application/json" \
-  -d '{"logs": "Failed login from 192.168.1.100 x 50 times", "query": "Find suspicious activity"}'
-
-# Tehdit analizi
-curl -X POST http://localhost:8000/api/v1/llm/analyze/threat \
-  -H "Content-Type: application/json" \
-  -d '{"threat_data": {"source_ip": "10.0.0.5", "event": "port_scan", "ports": [22,80,443]}}'
-```
-
-#### Frontend
-```bash
+Frontend (Next.js)
+Bash
 cd frontend
-
-# Bağımlılıkları yükle
 npm install
-
-# Geliştirme sunucusunu başlat
 npm run dev
-```
-
 Dashboard: http://localhost:3000
 
-## 📁 Proje Yapısı
-
-```
+📁 Project Architecture
+Plaintext
 Scout/
-├── backend/               # Python FastAPI Backend
+├── backend/                # Python FastAPI Backend
 │   ├── src/scout/
-│   │   ├── core/          # Config, Logging, Exceptions
-│   │   ├── domain/        # Entities, Events, Interfaces (DDD)
-│   │   ├── application/   # Use Cases, Services
-│   │   ├── infrastructure/# API, DB, LLM Adapters
-│   │   └── modules/       # Güvenlik Modülleri (Plugin Sistemi)
-│   │       ├── stealth/   # Pasif gözlem modu
-│   │       ├── defense/   # Aktif koruma modu
-│   │       └── hunter/    # Proaktif tarama modu
+│   │   ├── core/           # Config, Logging, Exceptions
+│   │   ├── domain/         # Entities, Events, Interfaces (DDD)
+│   │   ├── application/    # Use Cases, Services
+│   │   ├── infrastructure/ # API, DB, LLM Adapters (Claude/Ollama)
+│   │   └── modules/        # Security Plugins
+│   │       ├── stealth/    # Passive Observation
+│   │       ├── defense/    # Active Protection
+│   │       └── hunter/     # Proactive Scanning
 │   └── tests/
-├── frontend/              # Next.js Dashboard
-├── docker/                # Docker konfigürasyonları
-└── docs/                  # Dokümantasyon
-```
+├── frontend/               # Next.js Dashboard
+├── docker/                 # Container Configurations
+└── docs/                   # Technical Documentation
+🧩 Plugin System
+Scout is built with a modular architecture. You can easily extend its capabilities:
 
-## 🧩 Modül Sistemi
-
-Scout, plugin tabanlı bir mimari kullanır. Yeni modül eklemek için:
-
-```python
+Python
 from scout.modules import BaseModule, ExecutionContext, ModuleResult
 
 class MySecurityModule(BaseModule):
-    name = "my_module"
-    description = "Benim güvenlik modülüm"
+    name = "custom_scanner"
+    description = "AI-powered vulnerability scanner"
     version = "1.0.0"
 
     async def execute(self, context: ExecutionContext) -> ModuleResult:
-        # Modül mantığı
-        return ModuleResult(success=True, data={...})
-```
-
-## 🧪 Testler
-
-```bash
+        # Module logic here
+        return ModuleResult(success=True, data={"status": "secure"})
+🧪 Testing & Quality
+Bash
 cd backend
-
-# Tüm testler
-poetry run pytest
-
-# Sadece unit testler (hızlı)
-poetry run pytest tests/unit
-
-# Coverage raporu
-poetry run pytest --cov=src/scout
-```
-
-## 📜 Lisans
-
-Proprietary - Tüm hakları saklıdır.
+poetry run pytest                # Run all tests
+poetry run pytest tests/unit     # Fast unit tests
+poetry run pytest --cov=src/scout # Coverage report
+📜 License
+This project is licensed under the MIT License - see the LICENSE file for details.
